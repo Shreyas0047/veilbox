@@ -1,0 +1,244 @@
+\chapter{Init System}
+\label{ch:initsys}
+
+The init system is the first userspace process (PID 1) started by the
+kernel. It is responsible for bringing up the system, managing services,
+and handling shutdown. Veilbox uses BusyBox init — a minimal, predictable
+init implementation.
+
+\section{PID 1 Responsibilities}
+
+Every init system must handle:
+
+\begin{itemize}[nosep]
+  \item \textbf{Orphaned processes}: When a child's parent dies, the child
+        is reparented to PID 1. Init must \texttt{wait()} for orphaned
+        children to prevent zombie processes.
+  - \textbf{Signals}: PID 1 receives special signal handling. The kernel
+        does not deliver SIGKILL to PID 1 (it would be ignored).
+  - \textbf{Shutdown sequence}: On reboot or poweroff, init must unmount
+        filesystems, kill processes, and signal the kernel to power off.
+  - \textbf{Service management}: Init spawns system services and restarts
+        them if they die (crashed services get respawned).
+\end{itemize}
+
+\section{BusyBox Init Operation}
+
+BusyBox init follows a simple, deterministic loop:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Parse /etc/inittab}: Read configuration file into an
+        internal list of actions.
+  \item \textbf{Execute sysinit}: Run the single command specified with
+        the \texttt{sysinit} action. Wait for completion.
+  \item \textbf{Spawn respawn processes}: Fork and exec each process
+        marked with the \texttt{respawn} or \texttt{askfirst} action.
+        Store PIDs in a tracking table.
+  \item \textbf{Wait loop}: Call \texttt{waitpid()} in a loop. When a
+        child dies, check if it was a \texttt{respawn} process. If so,
+        re-fork and exec it. If it was a \texttt{once} process, do
+        nothing (it ran and exited).
+  \item \textbf{Signal handling}: On SIGTERM, SIGQUIT, SIGUSR1, or
+        SIGUSR2, execute the corresponding \texttt{shutdown} or
+        \texttt{restart} action from inittab.
+\end{enumerate}
+
+\section{The /etc/inittab File}
+
+BusyBox inittab format:
+
+\begin{lstlisting}
+<id>:<runlevels>:<action>:<process>
+\end{lstlisting}
+
+\begin{longtable}{|p{2.5cm}|p{4cm}|p{6cm}|}
+\hline
+\textbf{Field} & \textbf{Description} & \textbf{Veilbox Usage} \\
+\hline
+\texttt{<id>} & TTY device (optional). & \texttt{tty1}, \texttt{ttyS0} \\
+\texttt{<runlevels>} & Ignored by BusyBox. & Empty \\
+\texttt{<action>} & One of: sysinit, respawn, askfirst, once, wait, restart, shutdown, ctrlaltdel. & \texttt{sysinit}, \texttt{respawn}, \texttt{shutdown} \\
+\texttt{<process>} & Full path to executable. & \texttt{/etc/init.d/rcS}, \texttt{/sbin/getty} \\
+\hline
+\end{longtable}
+
+Veilbox inittab:
+
+\begin{lstlisting}
+::sysinit:/etc/init.d/rcS
+tty1::respawn:/sbin/autologin 38400 tty1
+ttyS0::respawn:/sbin/autologin 38400 ttyS0
+::restart:/sbin/init
+::shutdown:/bin/umount -a -r
+::shutdown:/sbin/swapoff -a
+\end{lstlisting}
+
+\section{Boot Script: /etc/init.d/rcS}
+
+The rcS script is the heart of system initialization. It runs
+sequentially and blocks init until complete:
+
+\begin{lstlisting}[language=bash]
+#!/bin/sh
+# Mount virtual filesystems
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+mkdir -p /dev/pts
+mount -t devpts none /dev/pts
+mount -t tmpfs none /tmp
+
+# Set hostname
+hostname -F /etc/hostname
+
+# Mount state partition
+STATE_DEV=""
+if [ -b /dev/vdb ]; then
+    STATE_DEV=/dev/vdb
+elif [ -b /dev/sdb ]; then
+    STATE_DEV=/dev/sdb
+fi
+if [ -n "$STATE_DEV" ]; then
+    mount "$STATE_DEV" /mnt/state
+fi
+
+# Configure network
+ifconfig lo 127.0.0.1 up
+ifconfig eth0 0.0.0.0 up
+udhcpc -i eth0 -b
+
+# Start services
+syslogd -O /var/log/messages -s 64
+containerd -c /etc/containerd/config.toml &
+dropbear -F -R -p 22 &
+\end{lstlisting}
+
+\section{Shutdown Sequence}
+
+When \texttt{poweroff} or \texttt{reboot} is issued:
+
+\begin{enumerate}[nosep]
+  \item BusyBox init receives SIGTERM.
+  \item init sends SIGTERM to all processes (except PID 1).
+  \item init runs \texttt{shutdown} actions from inittab: unmount
+        filesystems and deactivate swap.
+  \item init sends SIGKILL to remaining processes.
+  \item init syncs filesystems and calls \texttt{reboot(LINUX\_REBOOT\_CMD\_POWER\_OFF)}.
+\end{enumerate}
+
+\section{Autologin}
+
+The \texttt{/sbin/autologin} wrapper checks if \texttt{veilbox.autologin}
+is in the kernel command line:
+
+\begin{lstlisting}[language=bash]
+#!/bin/sh
+if grep -q veilbox.autologin /proc/cmdline; then
+    login -f root
+else
+    exec /sbin/getty "$@"
+fi
+\end{lstlisting}
+
+\section{Comparing Init Systems}
+
+\begin{longtable}{|p{3cm}|p{3.5cm}|p{3.5cm}|p{3.5cm}|}
+\hline
+\textbf{Feature} & \textbf{BusyBox init} & \textbf{systemd} & \textbf{OpenRC} \\
+\hline
+Binary size & 8 KB & 1.5 MB & 200 KB \\
+Config files & /etc/inittab & .service units & /etc/init.d/ \\
+Parallel startup & No & Yes & Partial \\
+Dependency tracking & No & Yes & Yes \\
+Socket activation & No & Yes & No \\
+Timer support & No & Yes & No \\
+Journal \& logging & No & journald & syslog-ng \\
+\hline
+\end{longtable}
+
+\section{Adding New Services}
+
+To add a new service to Veilbox:
+
+\begin{enumerate}[nosep]
+  \item Modify the rcS script to start the service:
+\begin{lstlisting}[language=bash]
+# /etc/init.d/rcS append
+echo "Starting my-service..."
+my-service --config /etc/my-service.conf &
+\end{lstlisting}
+  \item Add a configuration file:
+\begin{lstlisting}[language=bash]
+mkdir -p rootfs/etc
+cat > rootfs/etc/my-service.conf << 'EOF'
+# My service configuration
+port = 8080
+debug = false
+EOF
+\end{lstlisting}
+  \item Download and install the binary:
+\begin{lstlisting}[language=bash]
+curl -Lo rootfs/usr/bin/my-service \
+    https://example.com/my-service
+chmod +x rootfs/usr/bin/my-service
+\end{lstlisting}
+  \item Regenerate initramfs and rebuild kernel:
+\begin{lstlisting}[language=bash]
+./build.sh --stage initramfs
+./build.sh --stage kernel
+\end{lstlisting}
+  \item Test by booting and verifying the service:
+\begin{lstlisting}
+ps | grep my-service
+my-service --version
+\end{lstlisting}
+\end{enumerate}
+
+\section{System Rescue Mode}
+
+If the system fails to boot normally, several rescue modes are available:
+
+\subsection{Single-User Mode}
+
+Boot with \texttt{single} on the kernel command line. The system boots
+to a root shell without starting services:
+
+\begin{lstlisting}
+# In GRUB, edit the menu entry and add "single" to the linux line
+linux /boot/vmlinuz console=ttyS0 console=tty1 single
+\end{lstlisting}
+
+\subsection{Direct Shell (No Init)}
+
+Boot with \texttt{init=/bin/sh} to skip init entirely:
+
+\begin{lstlisting}
+linux /boot/vmlinuz console=ttyS0 init=/bin/sh
+\end{lstlisting}
+
+The root filesystem will be mounted but services will not start. The
+shell has PID 1 and the root filesystem is mounted read-write.
+
+\subsection{Read-Only Rootfs Recovery}
+
+If the root filesystem is corrupted, boot with \texttt{ro} and manually
+run fsck:
+
+\begin{lstlisting}
+# Not applicable to initramfs (tmpfs cannot corrupt)
+# But for the state partition:
+fsck.ext4 -f /dev/vdb
+\end{lstlisting}
+
+\section{Init Process Debugging}
+
+BusyBox init can be run with verbose output for debugging:
+
+\begin{lstlisting}
+# Add to kernel command line
+init=/sbin/init -v
+
+# Or modify /etc/inittab to add debug output
+::sysinit:/bin/sh -c "echo 'Starting init...'"
+::sysinit:/etc/init.d/rcS
+\end{lstlisting}

@@ -1,0 +1,222 @@
+\chapter{Performance Tuning}
+\label{ch:performance}
+
+This chapter covers performance optimization for Veilbox — both for the
+build process and for runtime operation in virtualized environments.
+
+\section{Build Performance}
+
+\subsection{Parallel Compilation}
+
+The kernel build is the most time-consuming step (approximately 4--5
+minutes on a 4-core machine):
+
+\begin{lstlisting}[language=bash]
+# Set number of parallel jobs
+make -j$(nproc) bzImage
+\end{lstlisting}
+
+\subsection{CCache Integration}
+
+CCache can dramatically speed up repeated builds:
+
+\begin{lstlisting}[language=bash]
+export CC="ccache gcc"
+export CXX="ccache g++"
+make -j$(nproc) bzImage
+# First build: slow. Subsequent builds: 50-70% faster.
+\end{lstlisting}
+
+\subsection{Incremental Builds}
+
+After the first full build, configuration changes rebuild only affected
+files:
+
+\begin{lstlisting}[language=bash]
+# Changing one kernel config option:
+make olddefconfig
+make -j$(nproc) bzImage
+# Typical time: 30-60 seconds
+\end{lstlisting}
+
+\section{Runtime Performance}
+
+\subsection{KVM Acceleration}
+
+QEMU with KVM enables near-native performance:
+
+\begin{lstlisting}[language=bash]
+# Check KVM availability
+ls -la /dev/kvm
+groups  # Must include 'kvm'
+
+# QEMU with KVM
+qemu-system-x86_64 -enable-kvm ...
+\end{lstlisting}
+
+\subsection{VirtIO Drivers}
+
+VirtIO paravirtualized drivers reduce I/O overhead:
+
+\begin{longtable}{|p{3cm}|p{4cm}|p{5cm}|}
+\hline
+\textbf{Device} & \textbf{Emulated Alternative} & \textbf{VirtIO Advantage} \\
+\hline
+Block & IDE (piix3-ide) & 3-5x throughput, 50\% less CPU \\
+Network & e1000 / rtl8139 & 5-10x throughput, 30\% less CPU \\
+Balloon & None & Dynamic memory management \\
+\hline
+\end{longtable}
+
+\subsection{Memory Optimization}
+
+\begin{itemize}[nosep]
+  \item \textbf{Minimum RAM}: 2 GB. The initramfs occupies ~90 MB,
+        containerd uses ~30 MB, kernel uses ~50 MB.
+  - \textbf{Transparent Huge Pages}: Enable on host for better memory
+        performance.
+  - \textbf{Memory overcommit}: Enabled by default for container workloads
+        that may overallocate.
+\end{itemize}
+
+\section{Kernel Boot Time Optimization}
+
+\subsection{Measured Boot Time}
+
+\begin{lstlisting}
+# From QEMU start to login prompt:
+# Direct kernel boot: <10 seconds
+# GRUB BIOS boot:    <15 seconds
+\end{lstlisting}
+
+\subsection{Reducing Boot Time}
+
+\begin{itemize}[nosep]
+  \item \textbf{Minimize kernel size}: The stripped-down Veilbox kernel
+        is approximately 90 MB (with embedded initramfs). Uncompressed
+        parts are proportional to boot time.
+  - \textbf{Serial vs. graphical}: Serial console (\texttt{-nographic})
+        is faster because no framebuffer initialization is needed.
+  - \textbf{Pre-built initramfs}: Skip gen\_initramfs\_list step by
+        caching the file list.
+\end{itemize}
+
+\section{Container Performance}
+
+\begin{itemize}[nosep]
+  \item \textbf{OverlayFS}: Better performance than aufs or device-mapper
+        snapshotters. Contains native kernel support.
+  - \textbf{noexec /tmp}: Mount /tmp with noexec to prevent container
+        escape via writable temp directories.
+  - \textbf{ulimit tuning}: Adjust container resource limits with
+        \texttt{nerdctl run --ulimit}:
+\end{itemize}
+
+\begin{lstlisting}
+nerdctl run --ulimit nofile=1024:2048 alpine sh
+nerdctl run --memory=256m --cpus=0.5 nginx:alpine
+\end{lstlisting}
+
+
+\section{Kernel Boot Parameters for Performance}
+
+\subsection{mitigations=off}
+
+Disabling CPU vulnerability mitigations can improve performance
+significantly in trusted VM environments:
+
+\begin{lstlisting}
+# Add to kernel command line:
+mitigations=off
+\end{lstlisting}
+
+This disables:
+\begin{itemize}[nosep]
+  \item Spectre v2 (IBPB, IBRS, STIBP)
+  \item Meltdown (PTI/KPTI)
+  \item Spectre v1 (user pointer sanitization)
+  \item Speculative Store Bypass (SSBD)
+  \item L1TF (L1D flush)
+  \item MDS (microarchitectural data sampling)
+\end{itemize}
+
+In a VM where the host is trusted, these mitigations are unnecessary.
+Performance gain: 5-15\% on CPU-bound workloads.
+
+\subsection{Scalability Options}
+
+\begin{lstlisting}
+# Add to kernel command line:
+clocksource=tsc tsc=reliable
+\end{lstlisting}
+
+The TSC (Time Stamp Counter) is the fastest available clocksource.
+Setting it as the default reduces timer overhead.
+
+\section{I/O Performance}
+
+\subsection{VirtIO-BLK with io\_uring}
+
+The Linux kernel's io\_uring subsystem provides high-performance async
+I/O. It can be used by containerd for image pulls:
+
+\begin{lstlisting}
+CONFIG_IO_URING=y
+\end{lstlisting}
+
+\subsection{Block Device Tuning}
+
+\begin{lstlisting}
+# Increase read-ahead buffer
+echo 4096 > /sys/block/vda/queue/read_ahead_kb
+
+# Set I/O scheduler (none for VirtIO)
+echo none > /sys/block/vda/queue/scheduler
+
+# Increase max sectors per request
+echo 2048 > /sys/block/vda/queue/max_sectors_kb
+\end{lstlisting}
+
+\section{Memory Performance}
+
+\subsection{Transparent Huge Pages}
+
+THP reduces TLB misses by using 2 MB pages instead of 4 KB:
+
+\begin{lstlisting}
+# Enable always (for consistent performance)
+echo always > /sys/kernel/mm/transparent_hugepage/enabled
+
+# Defragment when needed
+echo defer > /sys/kernel/mm/transparent_hugepage/defrag
+\end{lstlisting}
+
+\subsection{Swap}
+
+Swap is not used in Veilbox. The state partition is too small, and
+container workloads should fit in RAM:
+
+\begin{lstlisting}
+CONFIG_SWAP=n  # Disable swap support in kernel
+\end{lstlisting}
+
+\section{Network Performance}
+
+\subsection{Tx Queue Length}
+
+\begin{lstlisting}
+# Increase transmit queue length
+echo 10000 > /sys/class/net/eth0/tx_queue_len
+\end{lstlisting}
+
+\subsection{IRQ Affinity}
+
+Pin network IRQs to specific CPUs:
+
+\begin{lstlisting}
+# Find IRQ number for eth0
+cat /proc/interrupts | grep eth0
+
+# Set CPU affinity (CPU 0)
+echo 1 > /proc/irq/<N>/smp_affinity
+\end{lstlisting}

@@ -1,0 +1,12 @@
+# =============================================================================
+# Git LFS — large binary files stored as pointers, fetched on demand
+# =============================================================================
+output/vmlinuz    filter=lfs diff=lfs merge=lfs -text
+output/veilbox.vdi filter=lfs diff=lfs merge=lfs -text
+output/ssh-test-key filter=lfs diff=lfs merge=lfs -text
+# =============================================================================
+# Diff settings for source files
+# =============================================================================
+*.tex    diff=tex
+*.sh     diff=bash
+*.config diff=config

@@ -1,0 +1,164 @@
+\chapter{Filesystem Layers}
+\label{ch:fslayers}
+
+Veilbox implements a multi-layered filesystem strategy that separates
+the immutable root filesystem from persistent state storage. This chapter
+documents each filesystem layer and its role.
+
+\section{Storage Architecture}
+
+Veilbox uses three distinct storage tiers:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.8cm]
+\node[highlight] (initramfs) {Initramfs (tmpfs)};
+\node[box, below of=initramfs] (overlay) {OverlayFS (container layers)};
+\node[box, below of=overlay] (state) {State Partition (ext4)};
+\node[box, below of=state] (disk) {Disk Image (raw file)};
+\draw[arrow] (initramfs) -- node[right] {read-only /} (overlay);
+\draw[arrow] (overlay) -- node[right] {/mnt/state} (state);
+\draw[arrow] (state) -- node[right] {/dev/vda} (disk);
+\end{tikzpicture}
+\caption{Filesystem layering. The initramfs root is read-only at runtime;
+containers use OverlayFS on top; persistent data lives on the ext4
+state partition.}
+\label{fig:fslayers}
+\end{figure}
+
+\section{Layer 1: Initramfs (tmpfs)}
+
+The root filesystem is a tmpfs created by the kernel from the embedded
+cpio archive:
+
+\begin{itemize}[nosep]
+  \item \textbf{Type}: tmpfs (memory-backed, no block device).
+  \item \textbf{Contents}: BusyBox, containerd, runc, nerdctl, Dropbear,
+        configuration files.
+  \item \textbf{Size}: Approximately 90 MB uncompressed.
+  - \textbf{Persistence}: None — every reboot gets a fresh copy from the
+        kernel binary.
+  - \textbf{Mount}: \texttt{mount -t tmpfs none /}
+\end{itemize}
+
+\section{Layer 2: State Partition (ext4)}
+
+The state partition provides persistent storage across reboots:
+
+\begin{itemize}[nosep]
+  \item \textbf{Location}: \texttt{/mnt/state}
+  - \textbf{Device}: \texttt{/dev/vdb} (external VirtIO disk) or
+        \texttt{/dev/sdb} (external SATA disk) or \texttt{/state/} on
+        the VEILBOX partition (fallback).
+  - \textbf{Filesystem}: ext4.
+  - \textbf{Size}: 128 MB (default).
+  - \textbf{Contents}: containerd data (images, snapshots, metadata),
+        container logs, SSH host keys, /var/log/messages.
+\end{itemize}
+
+\subsection{Mount Strategy}
+
+The rcS script uses a fallback strategy:
+
+\begin{lstlisting}[language=bash]
+if [ -b /dev/vdb ]; then
+    mount /dev/vdb /mnt/state
+elif [ -b /dev/sdb ]; then
+    mount /dev/sdb /mnt/state
+elif [ -d /state ]; then
+    mount --bind /state /mnt/state
+else
+    mount -t tmpfs none /mnt/state
+fi
+\end{lstlisting}
+
+\section{Layer 3: OverlayFS (Container Layers)}
+
+Containers use OverlayFS for copy-on-write filesystem layering:
+
+\begin{itemize}[nosep]
+  \item \textbf{Lower dir}: Image layers (read-only snapshots).
+  \item \textbf{Upper dir}: Container writable layer (changes since
+        container creation).
+  \item \textbf{Merge dir}: The unified view presented to the container
+        process.
+\end{itemize}
+
+\section{Disk Image Structure}
+
+The 8 GB raw disk image (\texttt{veilbox.raw}) uses MBR partitioning:
+
+\begin{lstlisting}
+Disk veilbox.raw: 8 GiB, 8589934592 bytes, 16777216 sectors
+Device        Boot Start     End Sectors Size Id Type
+veilbox.raw1  *     2048 4196351 4194304   2G 83 Linux
+\end{lstlisting}
+
+The partition is formatted as ext4 with the label \texttt{VEILBOX}.
+
+
+\section{Layer 4: Container Image Layers}
+
+Container images are composed of OCI-compliant layers. Each layer is a
+tar archive of filesystem changes:
+
+\begin{lstlisting}
+# Example: nginx image layers
+Layer 0 (base): alpine:latest  ->  /bin/sh, /lib, /etc
+Layer 1:        nginx install  ->  /usr/sbin/nginx, /etc/nginx
+Layer 2:        config change  ->  /etc/nginx/nginx.conf
+Layer 3 (writable): container  ->  /var/log/nginx/access.log
+\end{lstlisting}
+
+Each layer is stored as a gzip-compressed tar archive in the containerd
+content store. The digest (SHA256) uniquely identifies each layer.
+
+\section{Filesystem Hierarchy Standard (FHS)}
+
+Veilbox implements a subset of the Filesystem Hierarchy Standard:
+
+\begin{longtable}{|p{3cm}|p{4cm}|p{5cm}|}
+\hline
+\textbf{Directory} & \textbf{Purpose} & \textbf{Type} \\
+\hline
+/bin & Essential user binaries & initramfs \\
+/sbin & System binaries & initramfs \\
+/etc & Configuration files & initramfs \\
+/usr/bin & Non-essential binaries & initramfs \\
+/usr/sbin & Non-essential system bins & initramfs \\
+/lib64 & Shared libraries & initramfs \\
+/proc & Process information & procfs \\
+/sys & Kernel/device information & sysfs \\
+/dev & Device nodes & devtmpfs \\
+/tmp & Temporary files & tmpfs \\
+/var/log & Log files & state (bind mount) \\
+/run & Runtime data & tmpfs \\
+/mnt/state & Persistent storage & ext4 (external) \\
+/root & Root user home & initramfs \\
+\hline
+\end{longtable}
+
+\section{Debugfs Rootless File Operations}
+
+The build script uses \texttt{debugfs} to write files to the ext4
+filesystem without mounting it. This avoids the need for loop device
+access:
+
+\begin{lstlisting}[language=bash]
+# Write a file to the ext4 image
+debugfs -w output/veilbox.raw <<EOF
+mkdir /boot
+write /path/to/vmlinuz /boot/vmlinuz
+write /path/to/grub.cfg /boot/grub/grub.cfg
+EOF
+\end{lstlisting}
+
+Key debugfs commands:
+\begin{itemize}[nosep]
+  \item \texttt{write <host> <target>}: Copy host file to image.
+  \item \texttt{mkdir <path>}: Create directory.
+  \item \texttt{rm <path>}: Remove file.
+  \item \texttt{stat <path>}: Show file metadata.
+  \item \texttt{ls -l <path>}: List directory.
+  \item \texttt{cd <path>}: Change directory.
+\end{itemize}

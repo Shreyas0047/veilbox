@@ -1,0 +1,219 @@
+\chapter{Kernel Build System}
+\label{ch:kernelbuild}
+
+The Linux kernel has one of the most sophisticated build systems in open
+source software. Based on GNU Make with a custom Kconfig language for
+configuration, it supports cross-compilation, incremental builds, and
+module management across 30+ architectures.
+
+\section{Kbuild Architecture}
+
+The kernel build system (Kbuild) is organized into several layers:
+
+\begin{itemize}[nosep]
+  \item \textbf{Top-level Makefile} (\texttt{Makefile}): Entry point.
+        Sets architecture, cross-compilation flags, and delegates to the
+        per-architecture Makefile.
+  \item \textbf{Architecture Makefile} (\texttt{arch/x86/Makefile}):
+        Architecture-specific build rules for x86\_64. Defines the
+        bootable image target (\texttt{bzImage}).
+  \item \textbf{Subdirectory Kbuild files} (\texttt{drivers/*/Kbuild}):
+        Per-directory build rules. Each driver or subsystem has its own
+        Kbuild file listing source files and their compilation flags.
+  \item \textbf{Configuration system} (\texttt{Kconfig}): Menu-based
+        configuration language. The kernel's \texttt{make menuconfig},
+        \texttt{make defconfig}, and \texttt{make olddefconfig} targets
+        all process Kconfig files.
+\end{itemize}
+
+\section{The Kconfig Language}
+
+Kconfig is a domain-specific language for describing configuration options
+and their dependencies. Each configuration option has:
+
+\begin{lstlisting}
+config NAMESPACES
+    bool "Namespaces support"
+    default y
+    help
+      Support for Linux namespaces, used for container isolation.
+
+config CGROUPS
+    bool "Control Groups support"
+    select KERNFS
+    help
+      Support for process resource control groups.
+\end{lstlisting}
+
+Key Kconfig constructs:
+
+\begin{longtable}{|p{3cm}|p{10cm}|}
+\hline
+\textbf{Keyword} & \textbf{Purpose} \\
+\hline
+\texttt{bool} & On/off option (y/n). \\
+\texttt{tristate} & Three-state option (y/m/n). \\
+\texttt{int} & Integer-valued option. \\
+\texttt{string} & String-valued option (e.g., path to initramfs). \\
+\texttt{default} & Default value if not otherwise specified. \\
+\texttt{depends on} & Prerequisite option(s). \\
+\texttt{select} & Force-enable another option. \\
+\texttt{help} & Documentation text. \\
+\texttt{prompt} & User-visible string in menuconfig. \\
+\hline
+\end{longtable}
+
+\subsection{Dependency Resolution}
+
+When option A depends on B, setting A to y forces B to y. The kernel's
+\texttt{olddefconfig} target walks the entire dependency graph and
+resolves all constraints:
+
+\begin{lstlisting}[language=bash]
+make olddefconfig
+# Output: .config is updated with all dependencies satisfied
+\end{lstlisting}
+
+\section{Build Targets}
+
+The most commonly used make targets:
+
+\begin{longtable}{|p{3cm}|p{10cm}|}
+\hline
+\textbf{Target} & \textbf{Purpose} \\
+\hline
+\texttt{defconfig} & Generate default configuration for the target architecture. \\
+\texttt{olddefconfig} & Update .config, resolving all dependency changes. \\
+\texttt{menuconfig} & Interactive ncurses-based configuration editor. \\
+\texttt{bzImage} & Build the compressed kernel image (x86\_64). \\
+\texttt{modules} & Build all enabled loadable kernel modules. \\
+\texttt{modules\_install} & Install modules to /lib/modules/\$(uname -r). \\
+\texttt{clean} & Remove most build artifacts (keep .config). \\
+\texttt{mrproper} & Remove all build artifacts including .config. \\
+\texttt{cscope} / \texttt{tags} & Generate code navigation database. \\
+\hline
+\end{longtable}
+
+\section{Incremental Builds}
+
+The kernel build system tracks dependencies at the file level using
+\%.o.cmd files. Each compiled object file has a corresponding .cmd file:
+
+\begin{lstlisting}
+# .built-in.a.cmd
+cmd_built-in.a := rm -f built-in.a; \
+    ar cDPrs built-in.a init/main.o arch/x86/init/init_task.o ...
+\end{lstlisting}
+
+When a source file changes, only the objects that depend on it are
+recompiled. This makes development iteration fast:
+\begin{lstlisting}[language=bash]
+# After changing one driver source file:
+make -j$(nproc) bzImage
+# Only recompiles the changed file and relinks
+\end{lstlisting}
+
+\section{The Initramfs Integration}
+
+When CONFIG\_INITRAMFS\_SOURCE is set, the build system:
+
+\begin{enumerate}[nosep]
+  \item Creates a temporary directory: \texttt{usr/initramfs\_data/}.
+  \item Copies files listed in initramfs.list.
+  \item Runs \texttt{scripts/gen\_initramfs\_list.sh} to generate
+        \texttt{usr/initramfs\_data.cpio.gz}.
+  \item Links the cpio archive into the kernel image via
+        \texttt{init/initramfs.o}.
+\end{enumerate}
+
+The cpio archive is placed in the \texttt{.init.ramfs} ELF section:
+
+\begin{lstlisting}[language=bash]
+# Verify initramfs is embedded in kernel:
+objcopy -O binary --only-section=.init.ramfs arch/x86/boot/bzImage /dev/stdout | cpio -t
+\end{lstlisting}
+
+\section{Cross-Compilation}
+
+While Veilbox targets x86\_64, the kernel build system supports
+cross-compilation for different architectures:
+
+\begin{lstlisting}[language=bash]
+# For ARM 32-bit:
+make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- defconfig
+# For AArch64:
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+\end{lstlisting}
+
+The architecture is selected by \texttt{ARCH} environment variable and
+the toolchain prefix by \texttt{CROSS\_COMPILE}.
+
+\section{Common Build Flags}
+
+\begin{longtable}{|p{4cm}|p{4cm}|p{4cm}|}
+\hline
+\textbf{Flag} & \textbf{Typical Value} & \textbf{Purpose} \\
+\hline
+\texttt{-O2} & Kernel default & Optimization level. \\
+\texttt{-fno-stack-protector} & (x86) & Disable stack canary. \\
+\texttt{-mno-sse} & (x86) & Disable SSE instructions. \\
+\texttt{-fno-PIE} & Kernel default & Disable position-independent. \\
+\texttt{-march=x86-64} & (x86) & Target architecture. \\
+\texttt{-mno-red-zone} & (x86\_64) & Disable red zone in ABI. \\
+\hline
+\end{longtable}
+
+\section{Kbuild Variables Reference}
+
+The kernel build system uses Make variables to control behavior:
+
+\begin{longtable}{|p{4cm}|p{4cm}|p{4cm}|}
+\hline
+\textbf{Variable} & \textbf{Typical Value} & \textbf{Purpose} \\
+\hline
+ARCH & x86\_64 & Target architecture \\
+CROSS\_COMPILE & (empty) & Toolchain prefix \\
+KBUILD\_OUTPUT & (empty) & Separate build directory \\
+KBUILD\_CFLAGS & (default) & Extra C compiler flags \\
+KBUILD\_CPPFLAGS & (default) & Extra C preprocessor flags \\
+KBUILD\_LDFLAGS & (default) & Extra linker flags \\
+HOSTCC & gcc & Host compiler \\
+HOSTCXX & g++ & Host C++ compiler \\
+CC & gcc & Target compiler \\
+LD & ld & Target linker \\
+OBJCOPY & objcopy & Object copy tool \\
+\hline
+\end{longtable}
+
+\section{Generating Patches for Submitting}
+
+When modifying the Veilbox configuration or source, generate patches
+for upstream submission:
+
+\begin{lstlisting}[language=bash]
+# Create a patch for kernel config changes
+git diff kernel/configs/custom-os.config > veilbox-config.patch
+
+# Create a patch for build script changes
+git diff build.sh > build-script.patch
+
+# Split patches for different topics
+git format-patch -1 --stdout > single.patch
+\end{lstlisting}
+
+\section{Using External Modules}
+
+The kernel supports building external modules outside the source tree:
+
+\begin{lstlisting}[language=bash]
+# Build an external module
+make -C /path/to/linux-7.1.0-rc6 \
+    M=/path/to/external/module \
+    modules
+
+# Install external module to initramfs
+make -C /path/to/linux-7.1.0-rc6 \
+    M=/path/to/external/module \
+    modules_install \
+    INSTALL_MOD_PATH=/path/to/rootfs
+\end{lstlisting}

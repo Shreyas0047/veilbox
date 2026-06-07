@@ -1,0 +1,273 @@
+\chapter{BusyBox}
+\label{ch:busybox}
+
+BusyBox is the Swiss Army knife of embedded Linux — a single binary that
+provides over 300 Unix utilities. It is the foundation of Veilbox's
+userspace, providing the shell, file utilities, init system, and network
+tools.
+
+\section{What is BusyBox?}
+
+BusyBox was created in 1999 by Bruce Perens to build a complete Linux
+system on a single floppy disk. The concept is simple: a single
+statically-linked binary contains multiple ``applets,'' each implementing
+a standard Unix utility.
+
+When invoked through a symlink (e.g., \texttt{/bin/ls} $\rightarrow$
+\texttt{/bin/busybox}), BusyBox checks \texttt{argv[0]} to determine
+which applet to run:
+
+\begin{lstlisting}
+int main(int argc, char *argv[]) {
+    const char *applet = bb_basename(argv[0]);
+    // Strip leading "busybox" if it's a direct call
+    // Lookup applet in applet table
+    // Jump to applet's main function
+}
+\end{lstlisting}
+
+\section{Applet Dispatch}
+
+BusyBox's \texttt{main()} function uses a binary search through a sorted
+table of all applet names. Each entry in the table is a triple:
+
+\begin{lstlisting}
+struct busybox_applet {
+    const char *name;       // Applet name (e.g., "ls")
+    int (*main)(int, char**);  // Function pointer
+    unsigned flags;          // Feature flags
+};
+\end{lstlisting}
+
+The table is sorted alphabetically at build time, enabling O(log n) lookup.
+
+\section{BusyBox Configuration}
+
+Like the Linux kernel, BusyBox uses Kconfig for configuration:
+
+\begin{lstlisting}[language=bash]
+# Configure BusyBox
+make -C busybox-1.35.0 defconfig
+
+# Enable specific applets
+make -C busybox-1.35.0 menuconfig
+
+# Build
+make -C busybox-1.35.0 -j$(nproc)
+
+# Install to directory
+make -C busybox-1.35.0 CONFIG_PREFIX=/path/to/rootfs install
+\end{lstlisting}
+
+\section{Key Applets in Veilbox}
+
+The following BusyBox applets are essential to Veilbox's operation:
+
+\subsection{Shell: ash}
+
+The Almquist Shell (ash) is BusyBox's default shell. It is a lightweight
+POSIX-compatible shell derived from the NetBSD sh:
+
+\begin{itemize}[nosep]
+  \item \textbf{Size}: Approximately 80 KB (vs. bash at 900 KB).
+  \item \textbf{Features}: Job control, functions, aliases, environment
+        variables, I/O redirection, pipes, here-docs.
+  \item \textbf{Limitations}: No arrays, no associative arrays, no
+        process substitution (but these are bashisms).
+\end{itemize}
+
+\subsection{Init: /sbin/init}
+
+BusyBox implements a minimal init system that reads /etc/inittab:
+
+\begin{lstlisting}
+# /etc/inittab
+::sysinit:/etc/init.d/rcS
+tty1::respawn:/sbin/getty 38400 tty1
+ttyS0::respawn:/sbin/getty 38400 ttyS0
+::shutdown:/bin/umount -a -r
+\end{lstlisting}
+
+Actions:
+\begin{itemize}[nosep]
+  \item \texttt{sysinit}: Run once at boot, before any respawn.
+  \item \texttt{respawn}: Restart the process whenever it exits.
+  \item \texttt{askfirst}: Like respawn but prompts before starting.
+  \item \texttt{shutdown}: Run on SIGTERM/SIGUSR1.
+  \item \texttt{restart}: Run when init receives SIGHUP.
+\end{itemize}
+
+\subsection{Core Utilities}
+
+\begin{longtable}{|p{3cm}|p{4cm}|p{5cm}|}
+\hline
+\textbf{Applet} & \textbf{Purpose} & \textbf{Common Options} \\
+\hline
+ls & List directory contents & -l, -a, -h, -R \\
+cp & Copy files & -r, -p, -f, -a \\
+mv & Move/rename files & -f, -i, -n \\
+rm & Remove files & -r, -f, -v \\
+mkdir & Create directory & -p (parents) \\
+cat & Concatenate files & -n, -b \\
+echo & Print text & -e (escape), -n \\
+grep & Search text & -r, -i, -v, -l \\
+sed & Stream editor & -i, -n, -e \\
+awk & Pattern scanning & (BusyBox awk, limited) \\
+\hline
+\end{longtable}
+
+\subsection{Process Utilities}
+
+\begin{lstlisting}
+ps          # List processes
+top         # Process monitor (simplified)
+kill        # Send signal
+pgrep       # Find process by name
+pkill       # Kill process by name
+\end{lstlisting}
+
+\subsection{Network Utilities}
+
+\begin{lstlisting}
+ifconfig    # Configure network interface
+route       # Show/manipulate routing table
+ping        # ICMP echo
+udhcpc      # DHCP client
+netstat     # Network statistics
+wget        # HTTP/FTP client
+\end{lstlisting}
+
+\subsection{Editors and Utilities}
+
+\begin{lstlisting}
+vi          # Minimal vi editor
+less        # Pager (simpler than full less)
+tail        # Show last N lines
+head        # Show first N lines
+sort        # Sort lines
+uniq        # Remove duplicates
+tee         # Split output to file and stdout
+\end{lstlisting}
+
+\section{Symbolic Link Installation}
+
+The \texttt{make install} step creates symbolic links for each enabled
+applet. For example:
+
+\begin{lstlisting}
+/bin/busybox -> /bin/busybox  (the binary itself)
+/bin/sh      -> /bin/busybox
+/bin/ls      -> /bin/busybox
+/bin/cp      -> /bin/busybox
+/usr/bin/vi  -> /bin/busybox
+/sbin/init   -> /bin/busybox
+\end{lstlisting}
+
+If the \texttt{CONFIG\_PREFIX} is set to \texttt{rootfs/}, the symlinks
+are created under \texttt{rootfs/bin/}, \texttt{rootfs/sbin/}, etc.
+
+\section{Trade-offs}
+
+BusyBox applets are not full replacements for their GNU counterparts:
+
+\begin{itemize}[nosep]
+  \item \textbf{Performance}: BusyBox grep is slower on large files
+        (no mmap optimization). BusyBox sort is slower on large datasets.
+  \item \textbf{Features}: BusyBox vi lacks syntax highlighting and
+        split windows. BusyBox top lacks interactive commands.
+  \item \textbf{Compatibility}: Some GNU-specific options are missing.
+        Scripts that use \texttt{sed -r} need to use \texttt{-E} instead.
+\end{itemize}
+
+However, for a minimal container host these limitations rarely matter
+--- containers typically provide their own userspace via images.
+
+\section{Building BusyBox from Source}
+
+\subsection{Download and Extract}
+
+\begin{lstlisting}[language=bash]
+curl -LO https://busybox.net/downloads/busybox-1.35.0.tar.bz2
+tar xf busybox-1.35.0.tar.bz2
+cd busybox-1.35.0
+\end{lstlisting}
+
+\subsection{Configuration}
+
+BusyBox uses Kconfig like the Linux kernel:
+
+\begin{lstlisting}[language=bash]
+# Default configuration
+make defconfig
+
+# Customize (optional)
+make menuconfig
+
+# Key settings to verify:
+# - Busybox Settings -> Build static binary (no shared libs)
+# - Init Utilities -> init (enable)
+# - Shells -> ash (enable)
+# - Coreutils -> all standard tools
+# - Network Utilities -> udhcpc, ifconfig, route, ping, wget
+\end{lstlisting}
+
+\subsection{Compilation}
+
+\begin{lstlisting}[language=bash]
+# Build (parallel)
+make -j$(nproc)
+
+# Install to rootfs directory
+make CONFIG_PREFIX=/path/to/rootfs install
+
+# Verify
+ls -la /path/to/rootfs/bin/sh
+/path/to/rootfs/bin/busybox --help
+\end{lstlisting}
+
+\subsection{Static vs Dynamic Linking}
+
+\begin{itemize}[nosep]
+  \item \textbf{Static}: \texttt{CONFIG\_STATIC=y}. Produces a ~900 KB
+        binary with no external dependencies. Recommended for initramfs
+        use. The binary is slightly larger because libc is included.
+  \item \textbf{Dynamic}: \texttt{CONFIG\_STATIC=n}. Produces a ~300 KB
+        binary but requires libc.so and ld-linux.so on the target.
+        Slightly smaller overall but more complex to deploy.
+\end{itemize}
+
+Veilbox uses static linking for maximum portability and simplicity.
+
+\section{The Ash Shell}
+
+Ash is the Almquist Shell, a lightweight POSIX-compatible shell:
+
+\begin{longtable}{|p{3cm}|p{4cm}|p{5cm}|}
+\hline
+\textbf{Feature} & \textbf{Ash} & \textbf{Bash} \\
+\hline
+Size & ~80 KB & ~900 KB \\
+Arrays & No & Yes \\
+Associative arrays & No & Yes \\
+Process substitution & No & Yes \\
+Here-strings & No & Yes \\
+regex =~ operator & No & Yes \\
+printf builtin & Yes & Yes \\
+Job control & Yes & Yes \\
+Functions & Yes & Yes \\
+Local variables & Yes & Yes \\
+\hline
+\end{longtable}
+
+\subsection{Ash Scripting Tips}
+
+\begin{itemize}[nosep]
+  \item Use \texttt{\$\{var:-default\}} for default values.
+  \item Use \texttt{test} or \texttt{[ ]} for conditionals (not [[ ]]).
+  \item Use \texttt{\$(cmd)} for command substitution (not backticks).
+  \item Use \texttt{local var=value} for function-local variables.
+  \item Use \texttt{read -r} to read lines without backslash escaping.
+  \item Redirect stderr with \texttt{2>\&1}.
+  \item Use \texttt{trap} for signal handling.
+  \item Use \texttt{type command} to check if a command exists.
+\end{itemize}

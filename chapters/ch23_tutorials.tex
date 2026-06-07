@@ -1,0 +1,262 @@
+\chapter{Tutorials}
+\label{ch:tutorials}
+
+This chapter provides step-by-step tutorials for common tasks with
+Veilbox, from first build to advanced container operations.
+
+\section{Tutorial 1: First Build}
+
+\textbf{Goal}: Build the Veilbox disk image from scratch.
+
+\begin{enumerate}[nosep]
+  \item Clone the repository:
+\begin{lstlisting}[language=bash]
+git clone https://github.com/Shreyas0047/veilbox.git
+cd veilbox
+\end{lstlisting}
+  \item Check prerequisites:
+\begin{lstlisting}[language=bash]
+gcc --version          # Need 14+
+make --version         # Need 4.4+
+qemu-system-x86_64 --version  # Need 7.0+
+\end{lstlisting}
+  \item Run the build:
+\begin{lstlisting}[language=bash]
+./build.sh
+# Full build: ~5 minutes
+# Output: output/veilbox.raw, output/veilbox.vdi, output/vmlinuz
+\end{lstlisting}
+  \item Boot in QEMU:
+\begin{lstlisting}[language=bash]
+MEM=2G ./test.sh
+\end{lstlisting}
+  \item When you see the login prompt, log in:
+\begin{lstlisting}
+veilbox login: root
+Password: veiladmin
+\end{lstlisting}
+\end{enumerate}
+
+\section{Tutorial 2: Quick Rebuild}
+
+\textbf{Goal}: Modify a configuration file and rebuild quickly.
+
+\begin{enumerate}[nosep]
+  \item Edit the rcS script:
+\begin{lstlisting}[language=bash]
+vim rootfs/etc/init.d/rcS
+\end{lstlisting}
+  \item Rebuild initramfs and kernel:
+\begin{lstlisting}[language=bash]
+# Regenerate initramfs file list
+./build.sh --stage initramfs
+
+# Rebuild kernel with updated initramfs
+./build.sh --stage kernel
+
+# Rebuild disk image
+./build.sh --stage disk
+\end{lstlisting}
+  \item Boot with updated image:
+\begin{lstlisting}[language=bash]
+MEM=2G ./test.sh
+\end{lstlisting}
+\end{enumerate}
+
+\section{Tutorial 3: SSH Access}
+
+\textbf{Goal}: Connect to Veilbox via SSH from the host.
+
+\begin{enumerate}[nosep]
+  \item Boot Veilbox with SSH port forwarding:
+\begin{lstlisting}[language=bash]
+MEM=2G ./test.sh
+\end{lstlisting}
+  \item From another terminal, connect:
+\begin{lstlisting}[language=bash]
+ssh -i output/ssh-test-key root@localhost -p 2222
+\end{lstlisting}
+  \item Or with password:
+\begin{lstlisting}[language=bash]
+ssh root@localhost -p 2222
+# Password: veiladmin
+\end{lstlisting}
+\end{enumerate}
+
+\section{Tutorial 4: Run a Container}
+
+\textbf{Goal}: Pull and run an nginx container.
+
+\begin{enumerate}[nosep]
+  \item Log in to Veilbox (console or SSH).
+  \item Check containerd is running:
+\begin{lstlisting}
+ps | grep containerd
+\end{lstlisting}
+  \item Pull an image:
+\begin{lstlisting}
+nerdctl pull nginx:alpine
+nerdctl images
+\end{lstlisting}
+  \item Run the container:
+\begin{lstlisting}
+nerdctl run -d --name web -p 80:80 nginx:alpine
+nerdctl ps
+\end{lstlisting}
+  \item Test from Veilbox:
+\begin{lstlisting}
+wget -q -O- http://localhost
+\end{lstlisting}
+\end{enumerate}
+
+\section{Tutorial 5: Persistent Storage}
+
+\textbf{Goal}: Create a container with persistent data.
+
+\begin{enumerate}[nosep]
+  \item Verify state partition is mounted:
+\begin{lstlisting}
+df -h /mnt/state
+\end{lstlisting}
+  \item Create a data directory:
+\begin{lstlisting}
+mkdir -p /mnt/state/data
+\end{lstlisting}
+  \item Write data:
+\begin{lstlisting}
+echo "Hello from state" > /mnt/state/data/hello.txt
+\end{lstlisting}
+  \item Run a container with the data mounted:
+\begin{lstlisting}
+nerdctl run --rm -v /mnt/state/data:/data alpine \
+    cat /data/hello.txt
+\end{lstlisting}
+  \item Reboot and verify persistence:
+\begin{lstlisting}
+MEM=2G ./test.sh --keep-state
+# After login:
+cat /mnt/state/data/hello.txt
+\end{lstlisting}
+\end{enumerate}
+
+
+\section{Tutorial 6: Custom Kernel Configuration}
+
+\textbf{Goal}: Add a new kernel feature and rebuild.
+
+\begin{enumerate}[nosep]
+  \item Enter kernel configuration:
+\begin{lstlisting}[language=bash]
+cd linux-7.1.0-rc6
+make menuconfig
+\end{lstlisting}
+  \item Navigate to the desired feature. For example, enable BPF:
+        \texttt{General setup} $\rightarrow$ \texttt{BPF subsystem}.
+  \item Save the configuration:
+\begin{lstlisting}[language=bash]
+# Save as custom fragment
+grep -E "^CONFIG_BPF" .config > ../kernel/configs/bpf.config
+\end{lstlisting}
+  \item Merge into main config:
+\begin{lstlisting}[language=bash]
+./scripts/kconfig/merge_config.sh \
+    -O .config \
+    .config \
+    ../kernel/configs/bpf.config
+make olddefconfig
+\end{lstlisting}
+  \item Rebuild:
+\begin{lstlisting}[language=bash]
+make -j$(nproc) bzImage
+cp arch/x86/boot/bzImage ../output/vmlinuz
+\end{lstlisting}
+  \item Test the new feature:
+\begin{lstlisting}
+# If BPF was added:
+mount -t bpf none /sys/fs/bpf
+bpftool prog list
+\end{lstlisting}
+\end{enumerate}
+
+\section{Tutorial 7: Debugging Build Failures}
+
+\textbf{Goal}: Diagnose and fix a common kernel build error.
+
+\begin{enumerate}[nosep]
+  \item Run the build:
+\begin{lstlisting}[language=bash]
+make -j$(nproc) bzImage 2>&1 | tee build.log
+\end{lstlisting}
+  \item Search for errors:
+\begin{lstlisting}[language=bash]
+grep -i error build.log | head -20
+\end{lstlisting}
+  \item Common fixes:
+\begin{itemize}[nosep]
+  \item \texttt{implicit declaration}: Missing header or wrong GCC version.
+  \item \texttt{undefined reference}: Missing library or wrong config.
+  \item \texttt{too many sections}: Disable CONFIG\_DEBUG\_INFO.
+  \item \texttt{disk full}: Free space in /tmp or build directory.
+\end{itemize}
+  \item If the error is config-related, use:
+\begin{lstlisting}[language=bash]
+make olddefconfig    # Fix dependency issues
+make menuconfig      # Manually fix options
+\end{lstlisting}
+  \item Clean and retry:
+\begin{lstlisting}[language=bash]
+make clean
+make -j$(nproc) bzImage
+\end{lstlisting}
+\end{enumerate}
+
+\section{Tutorial 8: Booting from USB}
+
+\textbf{Goal}: Write Veilbox to a USB drive for bare-metal boot.
+
+\begin{enumerate}[nosep]
+  \item Insert a USB drive (8 GB or larger).
+  \item Identify the device:
+\begin{lstlisting}[language=bash]
+lsblk
+# Look for your USB device, e.g., /dev/sdX
+\end{lstlisting}
+  \item Write the disk image:
+\begin{lstlisting}[language=bash]
+sudo dd if=output/veilbox.raw of=/dev/sdX bs=4M status=progress
+sync
+\end{lstlisting}
+  \item Boot from the USB drive on the target machine (configure BIOS
+        boot order to boot from USB).
+  \item Log in with \texttt{root} / \texttt{veiladmin}.
+\end{enumerate}
+
+\section{Tutorial 9: Creating Custom Container Images}
+
+\textbf{Goal}: Build a custom container image with nerdctl.
+
+\begin{enumerate}[nosep]
+  \item Create a Dockerfile:
+\begin{lstlisting}
+mkdir /mnt/state/myapp
+cat > /mnt/state/myapp/Dockerfile << 'EOF'
+FROM alpine:latest
+RUN apk add --no-cache python3 py3-pip
+COPY app.py /app.py
+CMD ["python3", "/app.py"]
+EOF
+\end{lstlisting}
+  \item Build the image:
+\begin{lstlisting}
+nerdctl build -t myapp:latest /mnt/state/myapp
+\end{lstlisting}
+  \item Run the image:
+\begin{lstlisting}
+nerdctl run -d --name myapp -p 5000:5000 myapp:latest
+\end{lstlisting}
+  \item Push to a registry (optional):
+\begin{lstlisting}
+nerdctl tag myapp:latest registry.example.com/myapp:latest
+nerdctl push registry.example.com/myapp:latest
+\end{lstlisting}
+\end{enumerate}

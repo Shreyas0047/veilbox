@@ -1,0 +1,228 @@
+\chapter{Container Workloads}
+\label{ch:workloads}
+
+This chapter demonstrates practical container workloads running on
+Veilbox. These examples validate that the container runtime works
+correctly and provide reference configurations for common use cases.
+
+\section{Prerequisites}
+
+All examples assume:
+\begin{itemize}[nosep]
+  \item Veilbox is booted and the root shell is available (via console
+        or SSH).
+  \item containerd is running (verified with \texttt{ps | grep containerd}).
+  \item Networking is functional (verified with \texttt{ping 10.0.2.2}).
+  \item The state partition is mounted at /mnt/state.
+\end{itemize}
+
+\section{Example 1: Hello World}
+
+The simplest container test:
+
+\begin{lstlisting}
+nerdctl pull alpine:latest
+nerdctl run alpine:latest echo "Hello from Veilbox!"
+\end{lstlisting}
+
+Expected output:
+\begin{lstlisting}
+Hello from Veilbox!
+\end{lstlisting}
+
+\section{Example 2: Interactive Shell}
+
+Run an interactive Alpine shell:
+
+\begin{lstlisting}
+nerdctl run -it alpine:latest sh
+/ # apk add --no-cache curl
+/ # curl https://example.com
+/ # exit
+\end{lstlisting}
+
+\section{Example 3: Web Server}
+
+Run nginx with host port mapping:
+
+\begin{lstlisting}
+nerdctl run -d \
+    --name web \
+    -p 80:80 \
+    nginx:alpine
+
+# Test from inside Veilbox:
+wget -q -O- http://localhost
+
+# Test from host (via QEMU port forwarding):
+curl http://localhost:8080/
+\end{lstlisting}
+
+\section{Example 4: Persistent Data}
+
+Use a bind mount for persistent container data:
+
+\begin{lstlisting}
+# Create data directory on state partition
+mkdir -p /mnt/state/data
+
+# Run container with bind mount
+nerdctl run -d \
+    --name web-data \
+    -v /mnt/state/data:/usr/share/nginx/html:ro \
+    nginx:alpine
+
+# Write data from host
+echo "Persistent" > /mnt/state/data/index.html
+\end{lstlisting}
+
+\section{Example 5: Resource Limits}
+
+Test resource constraints:
+
+\begin{lstlisting}
+# Memory limit
+nerdctl run --memory=64m alpine sh -c \
+    "dd if=/dev/zero of=/dev/null bs=1M count=100"
+
+# CPU limit (0.5 cores)
+nerdctl run --cpus=0.5 alpine sh -c \
+    "dd if=/dev/zero of=/dev/null bs=1M count=1000"
+\end{lstlisting}
+
+\section{Example 6: Multi-Container}
+
+Start multiple containers and verify isolation:
+
+\begin{lstlisting}
+# Start two HTTP servers
+nerdctl run -d --name web1 nginx:alpine
+nerdctl run -d --name web2 nginx:alpine
+
+# They have separate network stacks
+nerdctl exec web1 ip addr show eth0
+nerdctl exec web2 ip addr show eth0
+
+# They can communicate via the host bridge
+nerdctl exec web1 ping -c 1 $(nerdctl inspect web2 | grep IPAddress)
+\end{lstlisting}
+
+\section{Troubleshooting Containers}
+
+Common issues:
+\begin{lstlisting}
+nerdctl logs <container>     # View stdout/stderr
+nerdctl inspect <container>  # Detailed status
+nerdctl stats                # Resource usage
+nerdctl top <container>      # Running processes
+nerdctl events               # Stream container events
+\end{lstlisting}
+
+
+\section{Example 7: Database Container}
+
+Run MariaDB with persistent storage:
+
+\begin{lstlisting}
+# Create data directory
+mkdir -p /mnt/state/mariadb
+
+# Run MariaDB container
+nerdctl run -d \
+    --name mariadb \
+    -v /mnt/state/mariadb:/var/lib/mysql \
+    -e MARIADB_ROOT_PASSWORD=example \
+    -p 3306:3306 \
+    mariadb:10.11
+
+# Connect from another container
+nerdctl run -it --rm mariadb:10.11 \
+    mysql -h 10.0.2.15 -u root -pexample
+\end{lstlisting}
+
+\section{Example 8: Python Web App}
+
+Deploy a Python Flask application:
+
+\begin{lstlisting}
+# Create app directory
+mkdir -p /mnt/state/app
+
+# Write a simple Flask app
+cat > /mnt/state/app/app.py << 'EOF'
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def hello():
+    return "Hello from Veilbox Container!"
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+EOF
+
+# Run with Python image
+nerdctl run -d \
+    --name flask-app \
+    -v /mnt/state/app:/app \
+    -p 5000:5000 \
+    python:3.12-slim \
+    python /app/app.py
+
+# Test
+wget -q -O- http://localhost:5000
+\end{lstlisting}
+
+\section{Example 9: Resource Monitoring}
+
+Run a monitoring container with host metrics:
+
+\begin{lstlisting}
+# Run a stress test container
+nerdctl run -d --name stress --memory=128m alpine \
+    sh -c "while true; do dd if=/dev/zero of=/dev/null bs=1M count=100; done"
+
+# Monitor from host
+while true; do
+    clear
+    echo "=== Container Stats ==="
+    nerdctl stats --no-stream
+    echo "=== Host Memory ==="
+    free -m
+    echo "=== Host CPU ==="
+    top -bn1 | head -5
+    sleep 2
+done
+\end{lstlisting}
+
+\section{Example 10: Network Test}
+
+Test container networking with iperf:
+
+\begin{lstlisting}
+# Start iperf server
+nerdctl run -d --name iperf-server -p 5201:5201 \
+    alpine sh -c "apk add iperf3 && iperf3 -s"
+
+# Run iperf client from another container
+nerdctl run --rm alpine sh -c \
+    "apk add iperf3 && iperf3 -c 10.0.2.15"
+\end{lstlisting}
+
+\section{Example 11: Cleanup}
+
+Remove all containers and images:
+
+\begin{lstlisting}
+# Stop all running containers
+nerdctl stop $(nerdctl ps -q) 2>/dev/null
+
+# Remove all containers
+nerdctl rm $(nerdctl ps -aq) 2>/dev/null
+
+# Remove all images
+nerdctl rmi $(nerdctl images -q) 2>/dev/null
+
+# Clean containerd content store
+rm -rf /mnt/state/containerd/*
+\end{lstlisting}

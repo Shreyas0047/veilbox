@@ -1,0 +1,398 @@
+\chapter{Build Pipeline}
+\label{ch:pipeline}
+
+The Veilbox build pipeline transforms a bare Linux kernel source tree and
+a collection of binary tarballs into a bootable disk image. This chapter
+documents every stage of the pipeline, explaining the purpose of each step,
+the tools involved, and the output produced.
+
+\section{Pipeline Overview}
+
+The build is orchestrated by \texttt{build.sh}, a 759-line Bash script
+divided into 14 sequential stages. Each stage is implemented as a
+standalone function that can be called independently.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.8cm]
+\node[box] (deps) {Install Deps};
+\node[box, below of=deps] (dirs) {Create Rootfs};
+\node[box, below of=dirs] (config) {Write Config};
+\node[box, below of=config] (kconf) {Configure Kernel};
+\node[box, below of=kconf] (strip) {Strip Drivers};
+\node[box, below of=strip] (bins) {Populate Binaries};
+\node[box, below of=bins] (ssh) {SSH Keys};
+\node[box, below of=ssh] (libs) {Copy Libraries};
+\node[box, below of=libs] (cpio) {Generate Initramfs};
+\node[box, below of=cpio] (kernel) {Build Kernel};
+\node[box, below of=kernel] (sqfs) {SquashFS};
+\node[box, below of=sqfs] (state) {State Image};
+\node[box, below of=state] (disk) {Bootable Disk};
+\node[box, below of=disk] (vdi) {Convert VDI};
+\draw[arrow] (deps) -- (dirs);
+\draw[arrow] (dirs) -- (config);
+\draw[arrow] (config) -- (kconf);
+\draw[arrow] (kconf) -- (strip);
+\draw[arrow] (strip) -- (bins);
+\draw[arrow] (bins) -- (ssh);
+\draw[arrow] (ssh) -- (libs);
+\draw[arrow] (libs) -- (cpio);
+\draw[arrow] (cpio) -- (kernel);
+\draw[arrow] (kernel) -- (sqfs);
+\draw[arrow] (sqfs) -- (state);
+\draw[arrow] (state) -- (disk);
+\draw[arrow] (disk) -- (vdi);
+\end{tikzpicture}
+\caption{Veilbox build pipeline — 14 stages from environment setup to
+bootable VirtualBox disk image. Arrows indicate data flow.}
+\label{fig:pipeline}
+\end{figure}
+
+\section{Stage 1: Install Dependencies}
+
+The \texttt{install\_deps()} function checks for required tools and
+installs them using the host package manager.
+
+\begin{lstlisting}[language=bash]
+install_deps() {
+    local pkgs=(gcc make flex bison bc openssl-devel ...)
+    if command -v dnf &>/dev/null; then
+        sudo dnf install -y "${pkgs[@]}"
+    elif command -v apt &>/dev/null; then
+        sudo apt install -y "${pkgs[@]}"
+    else
+        echo "Warning: unsupported package manager"
+        echo "Please install: ${pkgs[*]}"
+    fi
+}
+\end{lstlisting}
+
+\section{Stage 2: Create Rootfs Directories}
+
+The standard Linux filesystem hierarchy is created under \texttt{rootfs/}.
+
+\begin{lstlisting}[language=bash]
+create_rootfs_dirs() {
+    local dirs=(
+        rootfs/bin   rootfs/sbin   rootfs/etc
+        rootfs/etc/init.d   rootfs/etc/dropbear
+        rootfs/usr/bin      rootfs/usr/sbin
+        rootfs/lib64        rootfs/mnt/state
+        rootfs/proc         rootfs/sys
+        rootfs/dev          rootfs/tmp
+        rootfs/var/log      rootfs/var/run
+        rootfs/run          rootfs/root
+    )
+    mkdir -p "${dirs[@]}"
+}
+\end{lstlisting}
+
+\section{Stage 3: Write Configuration Files}
+
+This stage generates the system configuration files that define Veilbox's
+behavior. The files written include:
+
+\begin{itemize}[nosep]
+  \item \texttt{/etc/inittab}: BusyBox init configuration — spawns getty
+        on tty1 and ttyS0, runs rcS at boot, handles power events.
+  \item \texttt{/etc/init.d/rcS}: System initialization script — mounts
+        virtual filesystems, starts network, launches services.
+  \item \texttt{/etc/passwd}: Root user entry with shell set to /bin/sh.
+  \item \texttt{/etc/shadow}: Hashed password for root (veiladmin) using
+        SHA-512 crypt hash.
+  \item \texttt{/etc/hostname}: The string \texttt{veilbox}.
+  \item \texttt{/etc/containerd/config.toml}: Containerd configuration
+        with snapshotter, namespace, and registry settings.
+  \item \texttt{/root/.profile}: Shell profile with colored prompt and
+        IP address display.
+  \item \texttt{/usr/share/udhcpc/default.script}: DHCP client script
+        for interface configuration.
+\end{itemize}
+
+\section{Stage 4: Configure Kernel}
+
+\subsection{Default Configuration}
+
+The kernel configuration starts from \texttt{make defconfig}, which
+generates a configuration file with approximately 10,000 options enabled
+based on the target architecture.
+
+\subsection{Config Fragment Merge}
+
+A custom configuration fragment (\texttt{kernel/configs/custom-os.config})
+is merged on top of the defconfig baseline using the kernel's
+\texttt{merge\_config.sh} script:
+
+\begin{lstlisting}[language=bash]
+configure_kernel() {
+    make defconfig
+    ./scripts/kconfig/merge_config.sh \
+        -O .config \
+        .config \
+        kernel/configs/custom-os.config
+    make olddefconfig
+}
+\end{lstlisting}
+
+The \texttt{merge\_config.sh} tool applies the fragment on top of the
+existing .config, enabling options set to \texttt{y} or \texttt{m} in
+the fragment and disabling options set to \texttt{n}. The
+\texttt{olddefconfig} pass resolves any new dependencies introduced by
+the fragment.
+
+\section{Stage 5: Strip Unnecessary Drivers}
+
+After merging the config fragment, a series of \texttt{sed} commands
+removes kernel subsystems that are not needed in a virtualized container
+host:
+
+\begin{lstlisting}[language=bash]
+strip_unnecessary_drivers() {
+    # No sound support in VM
+    sed -i '/CONFIG_SOUND[= ]/c\# CONFIG_SOUND is not set' .config
+
+    # No USB needed
+    sed -i '/CONFIG_USB[= ]/c\# CONFIG_USB is not set' .config
+
+    # No Wi-Fi or Bluetooth
+    sed -i '/CONFIG_WLAN[= ]/c\# CONFIG_WLAN is not set' .config
+
+    # No ATA or SCSI drivers
+    sed -i '/CONFIG_ATA[= ]/c\# CONFIG_ATA is not set' .config
+
+    make olddefconfig  # Fix dependency breakage
+}
+\end{lstlisting}
+
+\section{Stage 6: Populate Rootfs Binaries}
+
+This stage downloads and installs the four user-space binaries that
+constitute the Veilbox userspace:
+
+\begin{enumerate}[nosep]
+  \item \textbf{BusyBox} (1.35.0): \texttt{busybox} binary is copied to
+        \texttt{rootfs/bin/busybox}. The installation step also creates
+        the standard symlinks (\texttt{/bin/sh}, \texttt{/bin/ls}, etc.).
+  \item \textbf{containerd} (1.7.13): Extracted from tar.gz, the
+        \texttt{containerd}, \texttt{containerd-shim}, and
+        \texttt{containerd-shim-runc-v2} binaries are placed in
+        \texttt{rootfs/usr/bin/}.
+  \item \textbf{runc} (1.1.12): Single binary placed in
+        \texttt{rootfs/usr/bin/runc}.
+  \item \textbf{nerdctl} (1.7.5): Single binary placed in
+        \texttt{rootfs/usr/bin/nerdctl}.
+  \item \textbf{Dropbear} (2024.85): Compiled from source with
+        \texttt{--disable-zlib}, producing dropbear, dropbearkey,
+        and dropbearconvert in \texttt{rootfs/usr/bin/}.
+\end{enumerate}
+
+\section{Stage 7: Generate SSH Keys}
+
+An ED25519 key pair is generated for root SSH access:
+
+\begin{lstlisting}[language=bash]
+build_ssh_keys() {
+    dropbearkey -t ed25519 -f rootfs/etc/dropbear/dropbear_ed25519_host_key
+    dropbearkey -t rsa    -f rootfs/etc/dropbear/dropbear_rsa_host_key
+    # Create authorized_keys for public key auth
+    dropbearkey -t ed25519 -f /tmp/ssh_test_key \
+        | grep "^ssh-ed25519" \
+        > rootfs/etc/dropbear/authorized_keys
+}
+\end{lstlisting}
+
+\section{Stage 8: Copy Shared Libraries}
+
+BusyBox is statically linked, but containerd, runc, nerdctl, and Dropbear
+are dynamically linked against glibc. This stage finds their shared library
+dependencies and copies them to \texttt{rootfs/lib64/}:
+
+\begin{lstlisting}[language=bash]
+copy_libraries() {
+    for bin in rootfs/usr/bin/*; do
+        ldd "$bin" 2>/dev/null | while read -r line; do
+            lib=$(echo "$line" | grep -oP '(?<==> ).*\.so[^ ]*' || true)
+            if [ -n "$lib" ] && [ -f "$lib" ]; then
+                cp "$lib" rootfs/lib64/
+            fi
+        done
+    done
+}
+\end{lstlisting}
+
+\section{Stage 9: Generate Initramfs File List}
+
+The initramfs is specified as a kernel file list — a text file that maps
+file paths to their content, permissions, and ownership. The
+\texttt{gen\_initramfs\_list()} function converts the \texttt{rootfs/}
+directory into this format:
+
+\begin{lstlisting}[language=bash]
+gen_initramfs_list() {
+    # Use the kernel's gen_initramfs_list.sh script
+    scripts/gen_initramfs_list.sh rootfs/ > initramfs.list
+
+    # Add device nodes
+    echo "nod /dev/console 0600 0 0 c 5 1"   >> initramfs.list
+    echo "nod /dev/tty0   0600 0 0 c 4 0"    >> initramfs.list
+    echo "nod /dev/ttyS0  0600 0 0 c 4 64"   >> initramfs.list
+    echo "nod /dev/null   0666 0 0 c 1 3"    >> initramfs.list
+    echo "nod /dev/zero   0666 0 0 c 1 5"    >> initramfs.list
+}
+\end{lstlisting}
+
+\section{Stage 10: Build Kernel}
+
+The kernel is compiled with \texttt{make -j\$(nproc)}. The embedded
+initramfs is included automatically because the config specifies
+\texttt{CONFIG\_INITRAMFS\_SOURCE="initramfs.list"}.
+
+\begin{lstlisting}[language=bash]
+build_kernel() {
+    make -j$(nproc) bzImage
+    cp arch/x86/boot/bzImage output/vmlinuz
+}
+\end{lstlisting}
+
+\section{Stage 11: Create SquashFS Reference}
+
+An optional compressed rootfs archive is created for inspection:
+
+\begin{lstlisting}[language=bash]
+mksquashfs rootfs output/rootfs.squashfs -comp xz
+\end{lstlisting}
+
+\section{Stage 12: Create State Image}
+
+A 128 MB ext4 filesystem is created for persistent state storage:
+
+\begin{lstlisting}[language=bash]
+qemu-img create -f raw output/state.img 128M
+mkfs.ext4 -F output/state.img
+\end{lstlisting}
+
+\section{Stage 13: Create Bootable Disk Image}
+
+This is the most complex stage. A 8 GB raw disk image is created,
+partitioned, formatted, and populated with the bootloader and kernel.
+The detailed process is described in Chapter 6 (GRUB).
+
+\section{Stage 14: Convert to VDI}
+
+Finally, the raw image is converted to VirtualBox format:
+
+\begin{lstlisting}[language=bash]
+qemu-img convert -f raw -O vdi output/veilbox.raw output/veilbox.vdi
+\end{lstlisting}
+
+
+\section{Detailed Stage Analysis}
+
+\subsection{Dependency Detection}
+
+The build script's \texttt{install\_deps()} function uses a combination
+of \texttt{command -v} checks and feature tests to determine whether each
+required tool is available:
+
+\begin{lstlisting}[language=bash]
+check_deps() {
+    local missing=0
+    for cmd in gcc make flex bison bc curl rsync cpio xz \
+               qemu-img debugfs sfdisk grub2-mkimage; do
+        if ! command -v "$cmd" &>/dev/null; then
+            echo "Missing: $cmd"
+            missing=$((missing+1))
+        fi
+    done
+    return $missing
+}
+\end{lstlisting}
+
+\subsection{Error Handling Strategy}
+
+The build script uses a centralized error handling pattern:
+
+\begin{lstlisting}[language=bash]
+set -euo pipefail  # Exit on error, undefined vars, pipe failures
+
+# Each stage function returns non-zero on failure
+build_kernel() {
+    echo "==> Building kernel..."
+    make -j$(nproc) bzImage || {
+        echo "ERROR: Kernel build failed"
+        echo "Check kernel config with: make menuconfig"
+        return 1
+    }
+}
+\end{lstlisting}
+
+\subsection{Caching Strategy}
+
+To avoid redundant downloads and rebuilds, the script checks for
+existing artifacts:
+
+\begin{lstlisting}[language=bash]
+# Skip kernel extraction if already present
+if [ -d linux-7.1.0-rc6 ]; then
+    echo "Kernel source already extracted, skipping..."
+else
+    tar xf linux-7.1.0-rc6.tar.xz
+fi
+
+# Skip busybox download if already cached
+if [ -f busybox-1.35.0.tar.bz2 ]; then
+    echo "BusyBox source cached, skipping download..."
+fi
+\end{lstlisting}
+
+\subsection{Clean Build Mode}
+
+The \texttt{--clean} flag removes all build artifacts:
+
+\begin{lstlisting}[language=bash]
+clean_all() {
+    rm -rf output/* linux-7.1.0-rc6 rootfs/* \
+           initramfs.list .config .config.custom \
+           busybox-1.35.0* containerd-1.7.13* \
+           runc.amd64* nerdctl-1.7.5* dropbear-2024.85*
+    echo "All build artifacts removed."
+}
+\end{lstlisting}
+
+\section{Build Output Verification}
+
+After each build stage, the script should verify the output:
+
+\begin{lstlisting}[language=bash]
+# Verify kernel binary exists and has valid format
+verify_kernel() {
+    local kernel="output/vmlinuz"
+    if [ ! -f "$kernel" ]; then
+        echo "ERROR: Kernel binary not found!"
+        return 1
+    fi
+    local size=$(stat -c%s "$kernel")
+    echo "Kernel: $kernel ($size bytes)"
+
+    # Check for valid bzImage magic
+    if ! file "$kernel" | grep -q "bzImage"; then
+        echo "ERROR: Invalid kernel format!"
+        return 1
+    fi
+}
+
+# Verify disk image is bootable
+verify_disk() {
+    local disk="output/veilbox.raw"
+    sfdisk -l "$disk" > /dev/null 2>&1 || {
+        echo "ERROR: Invalid partition table!"
+        return 1
+    }
+    # Check MBR boot signature
+    local sig=$(od -A n -t x1 -j 510 -N 2 "$disk")
+    if [ "$sig" != " 55 aa" ]; then
+        echo "ERROR: Missing MBR boot signature!"
+        return 1
+    fi
+}
+\end{lstlisting}

@@ -1,0 +1,144 @@
+\chapter{Comparison with Other Approaches}
+\label{ch:comparison}
+
+Veilbox occupies a unique niche in the Linux distribution landscape. This
+chapter compares Veilbox with other approaches to building minimal Linux
+systems for container hosting.
+
+\section{Comparison Overview}
+
+\begin{longtable}{|p{3cm}|p{3cm}|p{3cm}|p{3cm}|p{3cm}|}
+\hline
+\textbf{Feature} & \textbf{Veilbox} & \textbf{Alpine} & \textbf{Buildroot} & \textbf{Fedora CoreOS} \\
+\hline
+Kernel source & Custom & Mainline & Custom & Mainline \\
+Init system & BusyBox init & OpenRC & BusyBox init / systemd & systemd \\
+Package manager & None & apk & None & rpm-ostree \\
+Rootfs size & ~90 MB & ~50 MB & ~20 MB & ~1 GB \\
+Build time & ~5 min & N/A & ~15 min & N/A \\
+Persistent storage & State partition & Full disk & Full disk & Full disk \\
+Container runtime & containerd & Docker / containerd & Docker & podman \\
+Config language & Bash \& Kconfig & n/a & Kconfig & Ignition \\
+Minimum RAM & 2 GB & 128 MB & 64 MB & 1 GB \\
+\hline
+\end{longtable}
+
+\section{Veilbox vs. Alpine Linux}
+
+Alpine Linux is the most popular minimal container host OS:
+
+\begin{itemize}[nosep]
+  \item \textbf{Similarities}: Both use BusyBox for core utilities. Both
+        aim for minimal footprint. Both target container workloads.
+  - \textbf{Differences}: Alpine uses OpenRC init (more features), has
+        the apk package manager, uses musl libc (smaller but not always
+        compatible), and is a general-purpose distribution with hundreds
+        of packages. Veilbox has no package manager, uses glibc, and is
+        single-purpose.
+  - \textbf{Trade-off}: Alpine is more flexible (install packages at
+        runtime). Veilbox is more secure (no runtime installation
+        possible) and more deterministic (every deployment is identical).
+\end{itemize}
+
+\section{Veilbox vs. Buildroot}
+
+Buildroot is a build system for embedded Linux:
+
+\begin{itemize}[nosep]
+  \item \textbf{Similarities}: Both build a custom kernel with embedded
+        rootfs. Both support BusyBox. Both produce minimal images.
+  \item \textbf{Differences}: Buildroot has a sophisticated package selection
+        system, supports hundreds of packages, and targets embedded
+        hardware (ARM, MIPS, RISC-V). Veilbox is x86\_64-only with a
+        fixed set of packages.
+  \item \textbf{Trade-off}: Buildroot is more powerful but requires learning
+        its configuration system and has a longer initial build.
+        Veilbox is simpler to configure (just edit build.sh).
+\end{itemize}
+
+\section{Veilbox vs. Fedora CoreOS}
+
+Fedora CoreOS is Red Hat's minimal container OS:
+
+\begin{itemize}[nosep]
+  \item \textbf{Similarities}: Both target container workloads. Both use
+        containerd (or podman). Both support automated updates.
+  \item \textbf{Differences}: CoreOS uses systemd (complex), Ignition for
+        provisioning (YAML-based), rpm-ostree for atomic updates, and
+        has SELinux enabled by default. It is supported by Red Hat.
+        Veilbox is independently built, uses BusyBox init, and has no
+        update mechanism.
+  \item \textbf{Trade-off}: CoreOS is enterprise-ready with support and
+        updates. Veilbox is simpler (no systemd, no SELinux) and easier
+        to understand entirely.
+\end{itemize}
+
+\section{When to Use Veilbox}
+
+Veilbox is ideal for:
+\begin{itemize}[nosep]
+  \item \textbf{Learning}: Understanding every component in a Linux system.
+  \item \textbf{CI/CD}: Disposable VMs for testing containers.
+  \item \textbf{Education}: Teaching kernel compilation, boot process, and
+        init systems.
+  \item \textbf{Benchmarking}: Minimal overhead for container performance
+        testing.
+\end{itemize}
+
+
+\section{Detailed Feature Matrix}
+
+\begin{longtable}{|p{4cm}|p{4cm}|p{4cm}|}
+\hline
+\textbf{Feature} & \textbf{Veilbox} & \textbf{Typical Distro} \\
+\hline
+Init system & BusyBox init & systemd / OpenRC \\
+Process supervisor & None (busybox init) & systemd / supervise-daemon \\
+Service files & Shell scripts & systemd unit files \\
+Dependency-based boot & No & Yes \\
+Parallel boot & No & Yes \\
+Socket activation & No & Yes \\
+Timer units & No & Yes \\
+Logging & syslogd + /var/log/messages & journald \\
+User session management & No & logind \\
+Tmpfiles & No & systemd-tmpfiles \\
+Sysctl & Manual (/proc/sys) & systemd-sysctl \\
+Mount units & No & systemd-mount \\
+Timer units & No & systemd-timer \\
+\hline
+\end{longtable}
+
+\section{Size Comparison Breakdown}
+
+\begin{longtable}{|p{4cm}|p{3cm}|p{3cm}|p{3cm}|}
+\hline
+\textbf{Component} & \textbf{Veilbox} & \textbf{Alpine} & \textbf{Ubuntu Server} \\
+\hline
+Kernel & 10 MB & 8 MB & 12 MB \\
+Initramfs & 80 MB & 15 MB & 50 MB \\
+Rootfs (installed) & N/A (embedded) & 50 MB & 2 GB \\
+BusyBox & 1.2 MB & 1.2 MB & N/A \\
+coreutils & N/A (BusyBox) & N/A (BusyBox) & 15 MB \\
+systemd & N/A & N/A & 25 MB \\
+OpenRC & N/A & 2 MB & N/A \\
+Package manager & None & apk (3 MB) & apt (20 MB) \\
+Container runtime & containerd (35 MB) & Docker (100 MB) & Docker (100 MB) \\
+\hline
+\textbf{Total} & \textbf{~90 MB} & \textbf{~180 MB} & \textbf{~2.5 GB} \\
+\hline
+\end{longtable}
+
+\section{Use Case Recommendations}
+
+\begin{itemize}[nosep]
+  \item \textbf{Veilbox}: Learning, CI/CD VMs, container testing,
+        security research, embedded container hosts.
+  \item \textbf{Alpine Linux}: Production container hosts, Docker hosts,
+        general-purpose embedded systems, routers, firewalls.
+  \item \textbf{Buildroot}: Custom embedded devices, IoT, specialized
+        hardware, minimal appliances.
+  \item \textbf{Fedora CoreOS}: Enterprise container hosts, Kubernetes
+        nodes, automated updates, SELinux environments.
+  \item \textbf{Ubuntu Server}: General-purpose servers, traditional
+        deployments, environments requiring package managers.
+\end{itemize}

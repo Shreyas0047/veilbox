@@ -1,0 +1,13 @@
+#!/bin/sh
+case "$1" in
+    deconfig)
+        ip addr flush dev $interface 2>/dev/null || true
+        ip route del default 2>/dev/null || true
+        ;;
+    bound|renew)
+        ip addr add $ip/${subnet:-24} dev $interface 2>/dev/null || true
+        ip route del default 2>/dev/null || true
+        [ -n "$router" ] && ip route add default via $router dev $interface 2>/dev/null || true
+        ;;
+esac
+exit 0

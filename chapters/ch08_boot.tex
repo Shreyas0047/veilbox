@@ -1,0 +1,237 @@
+\chapter{Boot Process}
+\label{ch:boot}
+
+This chapter traces the execution path from power-on to the login prompt,
+detailing every step the system takes from firmware initialization through
+kernel boot to userspace startup.
+
+\section{Boot Sequence Overview}
+
+The complete boot sequence has five major phases:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Firmware}: SeaBIOS POST, device enumeration, boot device
+        selection.
+  \item \textbf{Stage 1 Bootloader}: GRUB boot.img loads core.img from
+        the MBR gap sectors.
+  \item \textbf{Stage 2 Bootloader}: GRUB core.img loads the ext2 driver,
+        reads grub.cfg, and loads the kernel.
+  \item \textbf{Kernel}: Decompression, hardware initialization, initramfs
+        extraction, PID 1 execution.
+  \item \textbf{Userspace}: BusyBox init runs rcS, which mounts filesystems,
+        configures networking, and starts services.
+\end{enumerate}
+
+\section{Phase 1: Firmware (SeaBIOS)}
+
+\subsection{Power-On Self Test}
+
+When the virtual machine starts, SeaBIOS (shipped with QEMU) executes:
+
+\begin{enumerate}[nosep]
+  \item CPU reset vector: The CPU starts executing at address 0xFFFFFFF0
+        (the reset vector) in real mode. SeaBIOS jumps to its entry point
+        at 0xE05B.
+  \item Self-test: The BIOS checks the CPU, memory controller, and DMA
+        controller. On QEMU, these checks are minimal since the hardware
+        is emulated.
+  \item Memory sizing: The BIOS detects the RAM size by probing the
+        memory controller. QEMU reports the memory size configured via
+        the \texttt{-m} option.
+  \item PCI enumeration: The BIOS scans the PCI bus (configuration space
+        accessed via I/O ports 0xCF8/0xCFC) to discover VirtIO devices,
+        the VGA adapter, and other peripherals.
+  \item ACPI table generation: The BIOS generates the RSDT, DSDT, FACP,
+        APIC, and HPET tables describing the virtual hardware
+        configuration.
+  \item Boot device selection: The BIOS iterates through the boot order
+        (set by QEMU's \texttt{-boot} option). For each device, it reads
+        LBA 0 into memory at address 0x7C00. If the last two bytes are
+        0x55 0xAA, it transfers control.
+\end{enumerate}
+
+\section{Phase 2: GRUB Stage 1}
+
+At address 0x7C00, GRUB's \texttt{boot.img} begins execution:
+
+\begin{enumerate}[nosep]
+  \item The CPU is in real mode with the following register state:
+        \texttt{DL = boot drive number}, \texttt{CS:IP = 0x0000:0x7C00}.
+  \item \texttt{boot.img} sets up segment registers (\texttt{DS, ES, SS})
+        to 0x0000 and initializes the stack at 0x7C00 (growing downward).
+  \item It reads the blocklist from \texttt{core.img} at LBA 1. The
+        blocklist (12 bytes at offset 0x1F4) specifies how many sectors
+        to load and where.
+  \item Using INT 13h function 42h (extended read), it loads
+        \texttt{diskboot.img} (the first sector of core.img) into memory
+        at the segment specified by the blocklist.
+  \item Execution jumps to the loaded diskboot sector.
+\end{enumerate}
+
+\section{Phase 3: GRUB Stage 2}
+
+\subsection{diskboot.img}
+
+The diskboot sector performs:
+
+\begin{enumerate}[nosep]
+  \item Switches CPU from real mode to protected mode by setting bit 0
+        of CR0.
+  \item Enables the A20 gate (via port 0x92 or the keyboard controller
+        method) to allow access to memory above 1 MB.
+  \item Sets up a minimal Global Descriptor Table (GDT) with flat
+        segmentation (base 0, limit 4 GB).
+  \item Loads the rest of core.img using the blocklist.
+  \item Jumps to the GRUB kernel entry point.
+\end{enumerate}
+
+\subsection{GRUB Kernel Initialization}
+
+The GRUB kernel initializes its internal subsystems:
+
+\begin{enumerate}[nosep]
+  \item Memory management: GRUB detects the system memory map (using
+        INT 15h function E820h) and sets up its internal allocator.
+  \item Device manager: Probes disks via BIOS INT 13h and partitions
+        via the part\_msdos module.
+  \item Filesystem driver: The embedded ext2 module reads the VEILBOX
+        partition's superblock and root directory.
+  \item Config file parsing: GRUB reads \texttt{/boot/grub/grub.cfg},
+        displays the menu (with 5-second timeout), and executes the
+        selected menuentry.
+  \item Kernel loading: The \texttt{linux} command loads the kernel
+        (\texttt{/boot/vmlinuz}) into memory using the 32-bit boot
+        protocol. It sets up the kernel command line and jumps to the
+        kernel's 32-bit entry point.
+\end{enumerate}
+
+\section{Phase 4: Kernel Initialization}
+
+\subsection{Decompression}
+
+The kernel begins at \texttt{arch/x86/boot/compressed/head\_64.S} which:
+
+\begin{enumerate}[nosep]
+  \item Sets up the 64-bit long mode page tables (identity mapping).
+  \item Enables PAE (Physical Address Extension) and long mode by
+        setting EFER.LME in the MSR.
+  \item Jumps to the 64-bit C code (\texttt{extract\_kernel()}).
+  \item Decompresses the kernel proper (from the gzip or xz-compressed
+        data in the .init section) to the target address.
+  \item Jumps to the decompressed kernel entry point
+        (\texttt{start\_kernel()}).
+\end{enumerate}
+
+\subsection{start\_kernel()}
+
+The architecture-independent kernel entry:
+
+\begin{enumerate}[nosep]
+  \item Architecture setup: \texttt{setup\_arch()} initializes the page
+        table, IDT, GDT, TSS, and APIC.
+  - Memory management: \texttt{mm\_init()} sets up the buddy allocator,
+        slab allocator, and vmalloc region.
+  - Scheduler initialization: \texttt{sched\_init()} creates the idle
+        thread and initializes runqueues.
+  - Interrupt subsystem: \texttt{init\_IRQ()} programs the APIC and
+        installs interrupt handlers.
+  - Timers: \texttt{time\_init()} sets up the HPET or TSC as the
+        clocksource.
+  - Console: \texttt{console\_init()} registers the serial console
+        driver (8250 UART) and VGA text console.
+  - Initramfs: \texttt{populate\_rootfs()} extracts the embedded cpio
+        archive to tmpfs.
+  - PID 1: \texttt{run\_init\_process()} locates /sbin/init and executes
+        it as PID 1.
+\end{enumerate}
+
+\section{Phase 5: Userspace Initialization}
+
+BusyBox init (\texttt{/sbin/init}) runs as PID 1:
+
+\begin{enumerate}[nosep]
+  \item Reads \texttt{/etc/inittab} to determine what actions to take.
+  \item Executes the \texttt{::sysinit:/etc/init.d/rcS} action, running
+        the system initialization script.
+  \item rcS mounts proc, sysfs, devtmpfs, devpts, and tmpfs.
+  \item rcS sets the hostname and mounts the state partition.
+  \item rcS configures the loopback interface and starts DHCP on eth0.
+  \item rcS starts syslogd, containerd, and Dropbear.
+  \item After rcS completes, init spawns getty on tty1 and ttyS0.
+  \item Login prompt appears: \texttt{veilbox login:}.
+\end{enumerate}
+
+
+\section{Kernel Command-Line Parameters}
+
+The kernel command line is passed via the GRUB configuration or QEMU's
+\texttt{-append} option. Key parameters used by Veilbox:
+
+\begin{longtable}{|p{4cm}|p{3cm}|p{5cm}|}
+\hline
+\textbf{Parameter} & \textbf{Value} & \textbf{Purpose} \\
+\hline
+console & ttyS0,tty1 & Set serial and VGA console \\
+root & /dev/ram0 & Root device (initramfs) \\
+rw & (implied) & Mount root read-write \\
+quiet & (optional) & Reduce boot messages \\
+veilbox.autologin & (flag) & Enable auto-login \\
+panic & 10 & Reboot after 10s on panic \\
+init & /sbin/init & Path to init process \\
+\hline
+\end{longtable}
+
+\subsection{Debug Parameters}
+
+For troubleshooting boot issues:
+
+\begin{lstlisting}
+# Maximum verbosity
+console=ttyS0 earlyprintk=serial,ttyS0,115200 debug ignore_loglevel
+
+# Break before mounting root
+rd.break
+
+# Single-user mode
+single
+
+# Skip init entirely (emergency shell)
+init=/bin/sh
+\end{lstlisting}
+
+\subsection{The veilbox.autologin Parameter}
+
+This custom parameter is parsed by the \texttt{/sbin/autologin} wrapper.
+It checks \texttt{/proc/cmdline} for the string:
+
+\begin{lstlisting}[language=bash]
+#!/bin/sh
+if grep -q veilbox.autologin /proc/cmdline; then
+    # Auto-login as root without password
+    login -f root
+else
+    # Normal getty with password prompt
+    exec /sbin/getty "$@"
+fi
+\end{lstlisting}
+
+\section{Sysfs and Procfs Initialization}
+
+After mounting proc and sysfs, the kernel exposes runtime information:
+
+\begin{lstlisting}
+# Process information
+/proc/cpuinfo     # CPU details (model, flags, cores)
+/proc/meminfo     # Memory usage details
+/proc/self/ns     # Namespace IDs for current process
+/proc/1/root      # Root filesystem of PID 1
+
+# Kernel parameters
+/proc/sys/kernel/  # Kernel tuning parameters
+/proc/sys/net/     # Network stack tuning
+
+# Device information (sysfs)
+/sys/class/block/  # Block devices
+/sys/class/net/    # Network interfaces
+/sys/devices/      # Device hierarchy
+\end{lstlisting}

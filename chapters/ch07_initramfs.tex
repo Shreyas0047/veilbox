@@ -1,0 +1,246 @@
+\chapter{Initramfs}
+\label{ch:initramfs}
+
+The initial RAM filesystem (initramfs) is a compressed cpio archive
+embedded in the kernel binary that serves as the root filesystem during
+and after boot. Unlike traditional initrd (which uses a block device and
+a filesystem driver), initramfs uses tmpfs and is managed by the kernel's
+VFS layer directly.
+
+\section{What is Initramfs?}
+
+Initramfs is the kernel's mechanism for providing an initial root
+filesystem before the real root filesystem is mounted. In Veilbox,
+there is no separate real root — the initramfs \emph{is} the root
+filesystem, permanently.
+
+Key characteristics:
+\begin{itemize}[nosep]
+  \item \textbf{Memory-based}: The root filesystem lives entirely in RAM
+        (tmpfs). There is no block device backing it.
+  \item \textbf{Compressed}: The initramfs archive is gzip-compressed
+        (or xz-compressed, depending on kernel config) inside the kernel
+        binary. The kernel decompresses it at boot.
+  \item \textbf{Embedded}: The archive is linked into the kernel image
+        during the build, not loaded separately. The kernel and its
+        rootfs are a single file.
+  \item \textbf{Read-only at runtime}: Because the initramfs is embedded
+        in the kernel binary, modifications to the root filesystem are
+        lost on reboot. Persistent data is stored on a separate state
+        partition.
+\end{itemize}
+
+\section{The CPIO Archive Format}
+
+CPIO (Copy In/Output) is an archival format like tar but simpler. Each
+file in the archive is preceded by a 110-byte header:
+
+\begin{lstlisting}
+struct cpio_header {
+    char magic[6];      // "070701" for new ASCII format
+    char ino[8];        // Inode number (hex)
+    char mode[8];       // File mode and type (hex)
+    char uid[8];        // Owner UID (hex)
+    char gid[8];        // Owner GID (hex)
+    char nlink[8];      // Number of hard links (hex)
+    char mtime[8];      // Modification time (hex)
+    char filesize[8];   // Size of file data (hex)
+    char devmajor[8];   // Major device number (hex)
+    char devminor[8];   // Minor device number (hex)
+    char rdevmajor[8];  // Major for device nodes (hex)
+    char rdevminor[8];  // Minor for device nodes (hex)
+    char namesize[8];   // Pathname length including null (hex)
+    char check[8];      // Checksum (set to "00000000" if not used)
+};
+\end{lstlisting}
+
+\section{The Kernel File List Format}
+
+Instead of building a cpio archive manually, Veilbox uses the kernel's
+internal file list format. This is a text file that the kernel's build
+system (\texttt{scripts/gen\_initramfs\_list.sh}) converts to a cpio
+archive automatically.
+
+\subsection{File List Syntax}
+
+Each line in the file list specifies one filesystem entry:
+
+\begin{lstlisting}
+# Comments start with #
+dir   /proc          0755 0 0
+dir   /sys           0755 0 0
+dir   /dev           0755 0 0
+file  /bin/busybox   0755 0 0 path/to/busybox
+slink /bin/sh        /bin/busybox    0755 0 0
+nod   /dev/console   0600 0 0 c 5 1
+nod   /dev/null      0666 0 0 c 1 3
+\end{lstlisting}
+
+The five entry types are:
+
+\begin{longtable}{|p{2cm}|p{4cm}|p{6cm}|}
+\hline
+\textbf{Type} & \textbf{Syntax} & \textbf{Description} \\
+\hline
+dir & \texttt{dir path mode uid gid} & Creates a directory. \\
+nod & \texttt{nod path mode uid gid type major minor} & Creates a device node (c=char, b=block). \\
+slink & \texttt{slink path target mode uid gid} & Creates a symbolic link. \\
+pipe & \texttt{pipe path mode uid gid} & Creates a FIFO (named pipe). \\
+sock & \texttt{sock path mode uid gid} & Creates a Unix domain socket. \\
+file & \texttt{file path mode uid gid source} & Copies a file from the host filesystem. \\
+\hline
+\end{longtable}
+
+\subsection{Generating the File List}
+
+The build script uses the kernel's provided script:
+
+\begin{lstlisting}[language=bash]
+gen_initramfs_list() {
+    scripts/gen_initramfs_list.sh rootfs/ > initramfs.list
+
+    # Add essential device nodes not created by rootfs/
+    echo "nod /dev/console 0600 0 0 c 5 1"   >> initramfs.list
+    echo "nod /dev/tty0    0600 0 0 c 4 0"   >> initramfs.list
+    echo "nod /dev/ttyS0   0600 0 0 c 4 64"  >> initramfs.list
+    echo "nod /dev/null    0666 0 0 c 1 3"   >> initramfs.list
+    echo "nod /dev/zero    0666 0 0 c 1 5"   >> initramfs.list
+
+    # Sort for deterministic ordering
+    sort -o initramfs.list initramfs.list
+}
+\end{lstlisting}
+
+\section{How the Kernel Processes Initramfs}
+
+During boot, the kernel performs these steps:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Decompression}: After the kernel decompresses itself and
+        sets up basic memory management, it locates the embedded cpio
+        archive (identified by the magic bytes \texttt{070701} at a known
+        offset in the init section).
+  \item \textbf{Extraction}: The kernel calls \texttt{populate\_rootfs()}
+        in \texttt{init/initramfs.c}. This function reads the cpio archive
+        and creates the corresponding directory entries, files, symlinks,
+        and device nodes in a tmpfs filesystem.
+  \item \textbf{Mounting}: The tmpfs root is mounted at \texttt{/}. At
+        this point, the kernel has a fully functional root filesystem in
+        memory.
+  \item \textbf{Executing init}: The kernel locates the init binary
+        (\texttt{/init} or \texttt{/sbin/init}) and executes it as PID 1.
+        In Veilbox, this is BusyBox init.
+\end{enumerate}
+
+\section{Initramfs Size Considerations}
+
+The initramfs for Veilbox is approximately 90 MB uncompressed and 30 MB
+compressed. This is large for an initramfs but necessary because it
+contains the complete root filesystem including containerd, runc, and
+nerdctl binaries.
+
+\begin{longtable}{|p{4cm}|p{3cm}|p{3cm}|p{3cm}|}
+\hline
+\textbf{Component} & \textbf{Size (raw)} & \textbf{Size (compressed)} & \textbf{Notes} \\
+\hline
+BusyBox binary & 1.2 MB & 0.5 MB & Static binary \\
+containerd & 35 MB & 12 MB & Dynamic binary \\
+runc & 10 MB & 3.5 MB & Static binary \\
+nerdctl & 25 MB & 8 MB & Dynamic binary \\
+Dropbear & 0.5 MB & 0.2 MB & Static binary \\
+Shared libraries & 15 MB & 5 MB & glibc, libseccomp \\
+Config files & 50 KB & 10 KB & inittab, rcS, etc. \\
+Device nodes & 0 KB & 0 KB & Created by kernel \\
+\hline
+\textbf{Total} & \textbf{~87 MB} & \textbf{~29 MB} & \\
+\hline
+\end{longtable}
+
+\section{Device Nodes}
+
+Device nodes in the initramfs are specified in the file list, not created
+by a running udev or mdev daemon. The following device nodes are essential:
+
+\begin{longtable}{|p{3cm}|p{2cm}|p{2cm}|p{2cm}|p{4cm}|}
+\hline
+\textbf{Device} & \textbf{Major} & \textbf{Minor} & \textbf{Type} & \textbf{Purpose} \\
+\hline
+/dev/console & 5 & 1 & char & Kernel console \\
+/dev/tty0 & 4 & 0 & char & VGA text console \\
+/dev/ttyS0 & 4 & 64 & char & Serial console \\
+/dev/null & 1 & 3 & char & Data sink \\
+/dev/zero & 1 & 5 & char & Zero-filled reads \\
+/dev/random & 1 & 8 & char & Random number gen \\
+/dev/urandom & 1 & 9 & char & Non-blocking random \\
+/dev/kmsg & 1 & 11 & char & Kernel log access \\
+/dev/ptmx & 5 & 2 & char & PTY multiplexer \\
+\hline
+\end{longtable}
+
+
+\section{Device Nodes Explained}
+
+\subsection{Major and Minor Numbers}
+
+Every device node in Linux has a major number (identifying the device driver)
+and a minor number (identifying the specific device instance):
+
+\begin{lstlisting}
+# Character devices
+/dev/console  -> major 5, minor 1  (console driver)
+/dev/tty0     -> major 4, minor 0  (TTY driver, first VGA console)
+/dev/ttyS0    -> major 4, minor 64 (TTY driver, first serial port)
+/dev/null     -> major 1, minor 3  (memory device, null sink)
+/dev/zero     -> major 1, minor 5  (memory device, zero source)
+/dev/random   -> major 1, minor 8  (kernel random number generator)
+/dev/kmsg     -> major 1, minor 11 (kernel log messages)
+\end{lstlisting}
+
+The kernel creates device nodes from the initramfs file list entries.
+Each \texttt{nod} line in the list specifies:
+
+\begin{lstlisting}
+nod <path> <permissions> <uid> <gid> <type> <major> <minor>
+\end{lstlisting}
+
+Where \texttt{type} is \texttt{c} for character devices or \texttt{b} for
+block devices.
+
+\subsection{devtmpfs vs. Static Nodes}
+
+Veilbox uses a hybrid approach:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Static nodes in initramfs}: The initramfs file list
+        pre-creates critical device nodes (\texttt{/dev/console},
+        \texttt{/dev/null}, \texttt{/dev/tty0}, \texttt{/dev/ttyS0}).
+        These are needed before udev or devtmpfs starts.
+  \item \textbf{devtmpfs at runtime}: The \texttt{mount -t devtmpfs}
+        command in rcS mounts a device-managed tmpfs that automatically
+        creates nodes for all kernel-registered devices.
+\end{enumerate}
+
+This ensures that essential devices exist even before devtmpfs is mounted,
+while devtmpfs provides complete coverage for all kernel devices.
+
+\section{Initramfs Compression Options}
+
+The kernel supports several compression algorithms for the embedded cpio
+archive:
+
+\begin{longtable}{|p{3cm}|p{3cm}|p{3cm}|p{3cm}|}
+\hline
+\textbf{Algorithm} & \textbf{Compression Ratio} & \textbf{Speed} & \textbf{Kernel Option} \\
+\hline
+gzip & 3:1 & Fast & CONFIG\_RD\_GZIP \\
+bzip2 & 4:1 & Slow & CONFIG\_RD\_BZIP2 \\
+lzma & 5:1 & Very slow & CONFIG\_RD\_LZMA \\
+xz & 5:1 & Very slow & CONFIG\_RD\_XZ \\
+lzo & 2.5:1 & Very fast & CONFIG\_RD\_LZO \\
+lz4 & 2:1 & Extremely fast & CONFIG\_RD\_LZ4 \\
+zstd & 3.5:1 & Fast & CONFIG\_RD\_ZSTD \\
+\hline
+\end{longtable}
+
+Veilbox uses gzip compression (the default) for its balance of speed and
+compression ratio. The initramfs compresses from ~90 MB to ~30 MB.

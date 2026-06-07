@@ -1,0 +1,241 @@
+\chapter{Reference}
+\label{ch:reference}
+
+This chapter provides quick-reference material for day-to-day Veilbox
+operation, including command cheat sheets, configuration file summaries,
+and troubleshooting guides.
+
+\section{Command Cheat Sheet}
+
+\subsection{Build Commands}
+\begin{longtable}{|p{5cm}|p{8cm}|}
+\hline
+\textbf{Command} & \textbf{Description} \\
+\hline
+./build.sh & Full build (all 14 stages). \\
+./build.sh --clean & Clean all build artifacts. \\
+./build.sh --stage kernel & Build kernel only (incremental). \\
+./build.sh --stage disk & Build disk image only. \\
+./build.sh --stage initramfs & Regenerate initramfs file list. \\
+MEM=2G ./test.sh & Boot in QEMU (direct kernel). \\
+./test.sh --bios & Boot via SeaBIOS + GRUB. \\
+./test.sh --check & Auto health check (exit 0 on login). \\
+MEM=2G ./test.sh --keep-state & Boot with persistent state disk. \\
+\hline
+\end{longtable}
+
+\subsection{SSH Commands}
+\begin{longtable}{|p{5cm}|p{8cm}|}
+\hline
+\textbf{Command} & \textbf{Description} \\
+\hline
+ssh -i output/ssh-test-key root@localhost -p 2222 & Key auth. \\
+ssh root@localhost -p 2222 & Password auth (veiladmin). \\
+ssh-keygen -R '[localhost]:2222' & Remove old host key. \\
+\hline
+\end{longtable}
+
+\subsection{Container Commands}
+\begin{longtable}{|p{5cm}|p{8cm}|}
+\hline
+\textbf{Command} & \textbf{Description} \\
+\hline
+nerdctl images & List pulled images. \\
+nerdctl pull <image> & Pull an image. \\
+nerdctl run <image> <cmd> & Run a container. \\
+nerdctl run -it <image> sh & Interactive shell. \\
+nerdctl run -d --name <n> <image> & Detached container. \\
+nerdctl ps & List running containers. \\
+nerdctl ps -a & List all containers. \\
+nerdctl stop <id> & Stop container. \\
+nerdctl rm <id> & Remove container. \\
+nerdctl exec <id> <cmd> & Exec in running container. \\
+nerdctl logs <id> & View container logs. \\
+nerdctl stats & Resource usage. \\
+nerdctl inspect <id> & Detailed info. \\
+\hline
+\end{longtable}
+
+\subsection{System Commands}
+\begin{longtable}{|p{5cm}|p{8cm}|}
+\hline
+\textbf{Command} & \textbf{Description} \\
+\hline
+ps & List processes. \\
+ifconfig eth0 & Show IP address. \\
+netstat -tlnp & Show listening ports. \\
+df -h & Show disk usage. \\
+free -m & Show memory usage. \\
+mount & Show mounted filesystems. \\
+cat /var/log/messages & View system log. \\
+poweroff & Shutdown. \\
+reboot & Reboot. \\
+\hline
+\end{longtable}
+
+\section{Configuration File Reference}
+
+\begin{longtable}{|p{4cm}|p{3cm}|p{5cm}|}
+\hline
+\textbf{File} & \textbf{Format} & \textbf{Purpose} \\
+\hline
+/etc/inittab & BusyBox init & Spawn getty, run rcS, shutdown. \\
+/etc/init.d/rcS & Shell script & System initialization. \\
+/etc/passwd & Colon-delimited & User accounts. \\
+/etc/shadow & Colon-delimited & Password hashes. \\
+/etc/hostname & Plain text & System hostname. \\
+/etc/containerd/config.toml & TOML & Container runtime config. \\
+/root/.profile & Shell script & User login prompt. \\
+/usr/share/udhcpc/default.script & Shell script & DHCP configuration. \\
+\hline
+\end{longtable}
+
+\section{Kernel Config Key Reference}
+
+\begin{longtable}{|p{5cm}|p{3cm}|p{5cm}|}
+\hline
+\textbf{Option} & \textbf{Value} & \textbf{Purpose} \\
+\hline
+CONFIG\_NAMESPACES & y & Container isolation. \\
+CONFIG\_CGROUPS & y & Resource limits. \\
+CONFIG\_OVERLAY\_FS & y & Image layers. \\
+CONFIG\_VETH & y & Container networking. \\
+CONFIG\_BRIDGE & y & Network bridge. \\
+CONFIG\_VIRTIO\_NET & y & VirtIO NIC. \\
+CONFIG\_VIRTIO\_BLK & y & VirtIO disk. \\
+CONFIG\_EXT4\_FS & y & Root filesystem. \\
+CONFIG\_INITRAMFS\_SOURCE & "initramfs.list" & Embedded rootfs. \\
+CONFIG\_EFI\_STUB & y & QEMU -kernel boot. \\
+CONFIG\_SERIAL\_8250\_CONSOLE & y & Serial console. \\
+CONFIG\_SECCOMP & y & Syscall filtering. \\
+CONFIG\_DEVTMPFS & y & Device node creation. \\
+\hline
+\end{longtable}
+
+\section{BusyBox Applet Reference}
+
+\begin{longtable}{|p{3cm}|p{4cm}|p{5cm}|}
+\hline
+\textbf{Category} & \textbf{Applets} & \textbf{Notes} \\
+\hline
+Shell & ash, sh & POSIX shell (no bashisms). \\
+File & ls, cp, mv, rm, mkdir, rmdir, cat, chmod, chown, ln, find, grep, sed, awk & Core utils. \\
+Process & ps, kill, pgrep, pkill, top & Process management. \\
+Network & ifconfig, route, ping, netstat, udhcpc, wget & Networking. \\
+Init & init, getty, login, passwd & System init. \\
+Editor & vi & Minimal vi. \\
+Archive & tar, gzip, gunzip, bzip2, bunzip2, xz, unxz, cpio & Archive tools. \\
+Misc & echo, printf, test, true, false, sleep, timeout, env, set, export, read, exit & Shell builtins. \\
+\hline
+\end{longtable}
+
+\section{Kernel Parameter Reference}
+
+\begin{longtable}{|p{6cm}|p{7cm}|}
+\hline
+\textbf{Parameter} & \textbf{Format} \\
+\hline
+console & \texttt{console=device,options} \\
+root & \texttt{root=/dev/device} \\
+init & \texttt{init=/path/to/init} \\
+quiet & (flag, reduces boot messages) \\
+debug & (flag, maximum verbosity) \\
+single & (flag, single-user mode) \\
+panic & \texttt{panic=seconds} \\
+veilbox.autologin & (flag, custom Veilbox auto-login) \\
+net.ifnames & \texttt{net.ifnames=0} (legacy ethX names) \\
+mitigations & \texttt{mitigations=off} (disable CPU vuln fixes) \\
+clocksource & \texttt{clocksource=tsc} (use TSC timer) \\
+\hline
+\end{longtable}
+
+\section{Build Script Environment Variables}
+
+\begin{longtable}{|p{4cm}|p{4cm}|p{5cm}|}
+\hline
+\textbf{Variable} & \textbf{Default} & \textbf{Purpose} \\
+\hline
+MEM & 2G & Guest RAM for QEMU \\
+OUTPUT & output/ & Build output directory \\
+ROOTFS & rootfs/ & Root filesystem source \\
+KERNEL\_SRC & linux-7.1.0-rc6/ & Kernel source directory \\
+CACHE\_DIR & \$HOME/veilbox-cache & Download cache \\
+VERBOSE & 0 & Enable verbose build output \\
+SKIP\_DEPS & 0 & Skip dependency check \\
+\hline
+\end{longtable}
+
+\section{Port Reference}
+
+\begin{longtable}{|p{3cm}|p{3cm}|p{6cm}|}
+\hline
+\textbf{Port} & \textbf{Protocol} & \textbf{Service} \\
+\hline
+22 & TCP & SSH (Dropbear) — guest internal \\
+2222 & TCP & SSH (QEMU forwarded from host) \\
+80 & TCP & HTTP (container web servers) \\
+1338 & TCP & Containerd metrics (localhost only) \\
+3306 & TCP & MariaDB/MySQL (container) \\
+5000 & TCP & Flask/Python apps (container) \\
+5201 & TCP & iperf3 (container network test) \\
+\hline
+\end{longtable}
+
+\section{File System Layout Reference}
+
+\begin{lstlisting}
+# Complete filesystem hierarchy
+/               # initramfs root (tmpfs)
+|------ bin/        # BusyBox applets
+|------ sbin/       # System binaries (init, getty)
+|------ etc/        # Configuration
+|   |------ inittab
+|   |------ init.d/rcS
+|   |------ passwd
+|   |------ shadow
+|   |------ hostname
+|   |------ resolv.conf
+|   `------ dropbear/
+|       |------ authorized_keys
+|       |------ dropbear_ed25519_host_key
+|       `------ dropbear_rsa_host_key
+|------ usr/
+|   |------ bin/    # containerd, nerdctl, dropbear, dropbearkey
+|   `------ sbin/
+|------ lib64/      # Shared libraries (glibc, libseccomp)
+|------ proc/       # procfs
+|------ sys/        # sysfs
+|------ dev/        # devtmpfs
+|------ tmp/        # tmpfs
+|------ run/        # tmpfs (runtime data)
+|------ var/
+|   `------ log/
+|       `------ messages  # syslog output
+|------ mnt/
+|   `------ state/  # Persistent state (ext4 or tmpfs fallback)
+`------ root/       # Root user home
+    `------ .profile
+\end{lstlisting}
+
+\section{Quick Commands Reference}
+
+\begin{longtable}{|p{5cm}|p{8cm}|}
+\hline
+\textbf{Action} & \textbf{Command} \\
+\hline
+Build everything & \texttt{./build.sh} \\
+Clean build & \texttt{./build.sh --clean} \\
+Boot in QEMU & \texttt{MEM=2G ./test.sh} \\
+Boot with state & \texttt{./test.sh --keep-state} \\
+Auto health check & \texttt{./test.sh --check} \\
+GRUB BIOS boot & \texttt{./test.sh --bios} \\
+SSH connect & \texttt{ssh -i output/ssh-test-key root@localhost -p 2222} \\
+Kernel menuconfig & \texttt{cd linux-7.1.0-rc6 \&\& make menuconfig} \\
+Check logs & \texttt{cat /var/log/messages} \\
+Free memory & \texttt{free -m} \\
+Disk usage & \texttt{df -h} \\
+List processes & \texttt{ps} \\
+Network config & \texttt{ifconfig eth0} \\
+Routing table & \texttt{route -n} \\
+\hline
+\end{longtable}

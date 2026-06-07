@@ -1,0 +1,321 @@
+\chapter{Troubleshooting}
+\label{ch:trouble}
+
+Building a custom Linux system from source involves many interdependent
+components. When something goes wrong, the symptoms may appear far from
+the root cause. This chapter documents the most common issues encountered
+during Veilbox development and their solutions.
+
+\section{Build Failures}
+
+\subsection{Kernel Compilation Errors}
+
+\paragraph{Symptom: make fails with ``implicit function declaration''}
+
+This typically indicates a GCC version mismatch. The kernel requires GCC
+14+ for Linux 7.1.0-rc6.
+
+\begin{lstlisting}[language=bash]
+gcc --version   # Verify version
+sudo dnf update gcc  # Update if needed
+make mrproper   # Clean build tree
+\end{lstlisting}
+
+\paragraph{Symptom: ``No rule to make target 'debian/certs/signing\_key.pem'''}
+
+The kernel build system expects signing keys for module signature
+verification. If module signing is enabled but no keys are configured:
+
+\begin{lstlisting}[language=bash]
+# Disable module signing in kernel config
+scripts/config --disable MODULE_SIG
+make olddefconfig
+\end{lstlisting}
+
+\paragraph{Symptom: ``Kernel panic - not syncing: VFS: Unable to mount root fs''}
+
+The initramfs was not properly embedded. Verify:
+
+\begin{lstlisting}[language=bash]
+grep CONFIG_INITRAMFS_SOURCE .config
+# Should show: CONFIG_INITRAMFS_SOURCE="initramfs.list"
+ls -la initramfs.list  # File must exist
+# Check kernel binary contains cpio archive
+binwalk -e arch/x86/boot/bzImage | grep "cpio"
+\end{lstlisting}
+
+\subsection{Initramfs Issues}
+
+\paragraph{Symptom: ``/init: line 1: syntax error: unexpected word''}
+
+The init script has DOS line endings (CRLF). The kernel's cpio extractor
+preserves file contents exactly, so if the editor added \textbackslash r
+characters, the shell will choke:
+
+\begin{lstlisting}[language=bash]
+# Check for CRLF line endings
+file rootfs/etc/init.d/rcS
+# Fix if needed: dos2unix rootfs/etc/init.d/rcS
+\end{lstlisting}
+
+\paragraph{Symptom: ``/bin/sh: not found''}
+
+BusyBox is missing from the initramfs or the symlink is broken:
+
+\begin{lstlisting}[language=bash]
+ls -la rootfs/bin/sh          # Should point to busybox
+ls -la rootfs/bin/busybox     # Must exist
+file rootfs/bin/busybox       # Should be ELF binary
+\end{lstlisting}
+
+\section{Boot Failures}
+
+\subsection{GRUB Boot Failures}
+
+\paragraph{Symptom: ``Geometric error'' or triple fault during GRUB stage 1.5}
+
+The core.img blocklist is corrupted. This happens when the blocklist
+is manually patched with incorrect format (see Chapter 6 for the correct
+12-byte format). Solution: regenerate core.img with grub2-mkimage and
+do NOT patch the blocklist.
+
+\begin{lstlisting}[language=bash]
+grub2-mkimage -c embedded.cfg \
+    -o core.img -O i386-pc \
+    ext2 part_msdos biosdisk search
+\end{lstlisting}
+
+\paragraph{Symptom: ``No such partition''}
+
+GRUB cannot find the VEILBOX partition. Common causes:
+
+\begin{itemize}[nosep]
+  \item The ext4 filesystem label does not match. Verify with debugfs:
+        \texttt{debugfs -R "stats" veilbox.raw} | grep "Filesystem volume name"
+  \item The part\_msdos module is missing from core.img. Regenerate with
+        \texttt{part\_msdos} in the module list.
+  \item The disk image is not MBR-partitioned. Verify with
+        \texttt{sfdisk -l veilbox.raw}.
+\end{itemize}
+
+\paragraph{Symptom: ``You need to load the kernel first''}
+
+GRUB cannot find the kernel file. Check:
+
+\begin{itemize}[nosep]
+  \item The file path in grub.cfg matches the actual location on the
+        VEILBOX partition.
+  - The ext2 module can read the partition. The VEILBOX partition must
+        be ext4 with the ext2 driver (backward compatible).
+\end{itemize}
+
+\subsection{QEMU Boot Failures}
+
+\paragraph{Symptom: QEMU exits immediately with ``invalid MZ header''}
+
+The kernel lacks CONFIG\_EFI\_STUB. QEMU's \texttt{-kernel} mode requires
+a valid MZ/PE header at the start of the kernel binary:
+
+\begin{lstlisting}[language=bash]
+grep CONFIG_EFI_STUB .config
+# If not set: echo "CONFIG_EFI_STUB=y" >> .config
+\end{lstlisting}
+
+\paragraph{Symptom: Black screen in -nographic mode}
+
+The serial console is not configured:
+
+\begin{lstlisting}[language=bash]
+grep CONFIG_SERIAL_8250_CONSOLE .config  # Must be y
+# Ensure kernel cmdline includes console=ttyS0
+grep CONFIG_CMDLINE .config
+\end{lstlisting}
+
+\section{Network Issues}
+
+\paragraph{Symptom: No IP address after boot}
+
+Check the DHCP client:
+\begin{lstlisting}
+ps | grep udhcpc           # Is it running?
+ip addr show eth0          # Does the interface exist?
+udhcpc -i eth0 -v          # Run in verbose mode
+\end{lstlisting}
+
+If udhcpc reports ``ifconfig failed'', the interface name does not match.
+The default script uses \$interface which is set by udhcpc. Verify the
+interface name matches in the script.
+
+\section{SSH Issues}
+
+\paragraph{Symptom: ``Permission denied (publickey,password)''}
+
+The Dropbear \texttt{-w} flag was set, which in Dropbear v2025.89+
+means ``\textbf{Disallow} root logins'' (the opposite of older versions).
+Remove the \texttt{-w} flag from the Dropbear command line.
+
+\paragraph{Symptom: ``Connection refused''}
+
+Dropbear is not running or not listening on the expected port:
+\begin{lstlisting}
+ps | grep dropbear
+netstat -tlnp | grep 22
+\end{lstlisting}
+
+\paragraph{Symptom: ``Host key verification failed''}
+
+The guest's host keys changed (e.g., after rebuilding). Remove the old
+key from the known\_hosts file:
+\begin{lstlisting}[language=bash]
+ssh-keygen -R '[localhost]:2222'
+\end{lstlisting}
+
+\section{Container Runtime Issues}
+
+\paragraph{Symptom: ``containerd: failed to load cgroup''}
+
+The kernel lacks cgroup support:
+\begin{lstlisting}[language=bash]
+grep CONFIG_CGROUPS .config           # Must be y
+grep CONFIG_MEMCG .config             # Must be y
+mount | grep cgroup                   # Must show cgroup mounts
+\end{lstlisting}
+
+\paragraph{Symptom: ``runc: permission denied''}
+
+Seccomp is enabled but the kernel lacks seccomp support:
+\begin{lstlisting}[language=bash]
+grep CONFIG_SECCOMP .config           # Must be y
+grep SECCOMP /proc/self/status        # Must show seccomp
+\end{lstlisting}
+
+\section{Storage Issues}
+
+\paragraph{Symptom: ``No space left on device''}
+
+The 128 MB state partition is full. Clean up:
+
+\begin{lstlisting}
+# Check usage
+df -h /mnt/state
+
+# Remove unused container images
+nerdctl images
+nerdctl rmi <image-id>
+
+# Remove stopped containers
+nerdctl rm $(nerdctl ps -aq)
+
+# Clean containerd content store
+du -sh /mnt/state/containerd/*
+rm -rf /mnt/state/containerd/tmp/*
+\end{lstlisting}
+
+\paragraph{Symptom: ``Failed to mount /mnt/state''}
+
+The state partition device is not available. The fallback behavior
+mounts a tmpfs, so /mnt/state will exist but will be empty. To debug:
+
+\begin{lstlisting}
+# Check available block devices
+ls -la /dev/vd* /dev/sd*
+
+# Check kernel messages for storage errors
+dmesg | grep -i "vdb\|sdb\|ext4"
+
+# Manually mount
+mount /dev/vdb /mnt/state 2>&1
+\end{lstlisting}
+
+\section{Init Process Issues}
+
+\paragraph{Symptom: ``Kernel panic - not syncing: Attempted to kill init!''}
+
+The init process (PID 1) crashed. This is fatal because the kernel
+has no process to manage. Common causes:
+
+\begin{itemize}[nosep]
+  \item \textbf{BusyBox missing}: /sbin/init does not exist. Verify
+        the BusyBox binary and symlinks in the initramfs.
+  \item \textbf{/etc/inittab missing or malformed}: BusyBox init reads
+        inittab on startup. If the file is missing or has syntax errors,
+        init may not spawn any processes.
+  \item \textbf{Wrong init path}: The kernel command line specifies an
+        init path (\texttt{init=/sbin/init}) that does not exist on the
+        root filesystem.
+  \item \textbf{Shared library missing}: If BusyBox is dynamically linked
+        (it should be static in Veilbox), missing libraries prevent it
+        from executing.
+\end{itemize}
+
+\paragraph{Symptom: ``init: can't run /etc/init.d/rcS''}
+
+The rcS script is missing, has incorrect permissions, or has a shebang
+pointing to a non-existent interpreter:
+
+\begin{lstlisting}
+# Check permissions
+ls -la /etc/init.d/rcS
+# Should be: -rwxr-xr-x
+
+# Check shebang
+head -1 /etc/init.d/rcS
+# Should be: #!/bin/sh
+
+# Verify /bin/sh exists
+ls -la /bin/sh
+\end{lstlisting}
+
+\section{Containerd Troubleshooting}
+
+\paragraph{Symptom: ``containerd: failed to start daemon: OCI runtime create failed''}
+
+The runc binary is missing or incompatible:
+
+\begin{lstlisting}
+# Verify runc exists and is executable
+ls -la /usr/bin/runc
+file /usr/bin/runc
+
+# Check runc version
+runc --version
+
+# Verify containerd can find runc
+containerd config default | grep runtime
+\end{lstlisting}
+
+\paragraph{Symptom: ``Failed to pull image: dial tcp: lookup registry-1.docker.io''}
+
+DNS resolution is not working:
+
+\begin{lstlisting}
+# Check DNS configuration
+cat /etc/resolv.conf
+
+# Test DNS resolution
+nslookup registry-1.docker.io
+# or: ping -c 1 registry-1.docker.io
+
+# Manually set DNS
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
+echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+\end{lstlisting}
+
+\section{Serial Console Issues}
+
+\paragraph{Symptom: No output on serial console}
+
+The serial port is not configured in the kernel or QEMU:
+
+\begin{lstlisting}[language=bash]
+# Verify kernel config
+grep CONFIG_SERIAL_8250_CONSOLE .config
+grep CONFIG_SERIAL_8250 .config
+
+# Verify QEMU serial port
+# Should have: -nographic or -serial stdio
+
+# Check kernel command line
+cat /proc/cmdline
+# Should include: console=ttyS0
+\end{lstlisting}

@@ -1,0 +1,274 @@
+\chapter{QEMU Virtualization}
+\label{ch:qemu}
+
+QEMU (Quick EMUlator) is the primary test and deployment platform for
+Veilbox. This chapter documents the QEMU command-line options, virtual
+hardware configuration, network setup, and debugging techniques used
+during development.
+
+\section{QEMU Overview}
+
+QEMU is a type 2 hypervisor that emulates a complete x86\_64 computer
+system. When used with KVM (Kernel-based Virtual Machine), it achieves
+near-native performance by executing guest instructions directly on the
+host CPU.
+
+\subsection{Boot Modes}
+
+Veilbox supports two QEMU boot modes:
+
+\paragraph{Direct Kernel Boot (-kernel)}:
+\begin{lstlisting}
+qemu-system-x86_64 \
+    -kernel output/vmlinuz \
+    -append "console=ttyS0 console=tty1" \
+    -m 2G \
+    -nographic
+\end{lstlisting}
+
+In this mode, QEMU loads the kernel binary directly without involving
+a bootloader. The kernel must have \texttt{CONFIG\_EFI\_STUB=y} to
+provide a valid MZ/PE header that QEMU's firmware recognizes.
+
+\paragraph{BIOS Boot (SeaBIOS + GRUB)}:
+\begin{lstlisting}
+qemu-system-x86_64 \
+    -drive file=output/veilbox.raw,format=raw,if=virtio \
+    -m 2G \
+    -nographic
+\end{lstlisting}
+
+In this mode, QEMU boots SeaBIOS, which loads GRUB from the MBR of the
+disk image, which then loads the kernel. This path validates the full
+boot process including the bootloader.
+
+\section{Virtual Hardware Configuration}
+
+\subsection{CPU and Memory}
+
+\begin{lstlisting}
+-cpu host        # Expose host CPU features to guest
+-smp 2           # 2 virtual CPUs
+-m 2G            # 2 GB RAM (required for ~90MB initramfs)
+\end{lstlisting}
+
+The \texttt{-cpu host} flag enables KVM's maximum feature set (VMX, SMEP,
+SMAP, AES-NI, etc.). Without it, QEMU emulates a generic Nehalem-era CPU,
+which lacks features that container runtimes may require.
+
+\subsection{Storage}
+
+\begin{lstlisting}
+-drive file=output/veilbox.raw,format=raw,if=virtio
+\end{lstlisting}
+
+The VirtIO block device provides paravirtualized I/O. The guest kernel
+accesses it as \texttt{/dev/vda}. Compared to IDE emulation
+(\texttt{if=ide}), VirtIO block reduces I/O latency by 50\% and increases
+throughput by 3--5x.
+
+\subsection{Networking}
+
+\begin{lstlisting}
+-netdev user,id=net0,hostfwd=tcp::2222-:22
+-device virtio-net,netdev=net0
+\end{lstlisting}
+
+User-mode networking (SLiRP) provides:
+\begin{itemize}[nosep]
+  \item A virtual DHCP server at 10.0.2.2.
+  \item DNS redirection to the host's DNS (at 10.0.2.3).
+  \item Guest IP: 10.0.2.15/24.
+  \item Port forwarding: host port 2222 $\rightarrow$ guest port 22
+        (SSH).
+\end{itemize}
+
+\section{Serial Console Modes}
+
+\subsection{-nographic Mode}
+
+\begin{lstlisting}
+-nographic
+\end{lstlisting}
+
+QEMU redirects the serial port (ttyS0) to the terminal's stdio. The
+guest output appears directly in the terminal. Keystrokes are sent to
+the guest. This is headless mode --- no graphical window appears.
+
+\subsection{Graphical Mode}
+
+\begin{lstlisting}
+-vga std        # Standard VGA adapter
+-serial mon:telnet::2223,server,nowait  # Serial via telnet
+\end{lstlisting}
+
+With a graphical window, the guest's VGA text console (tty1) appears in
+the QEMU window. The serial console is accessible via telnet on port 2223.
+
+\section{QEMU Monitor}
+
+QEMU provides a monitor interface for VM introspection:
+
+\begin{lstlisting}
+-monitor telnet::2224,server,nowait
+\end{lstlisting}
+
+Useful monitor commands:
+\begin{lstlisting}
+(qemu) info block        # List block devices and stats
+(qemu) info network      # Network device statistics
+(qemu) info registers    # CPU register dump
+(qemu) info cpus         # CPU state
+(qemu) system_powerdown  # Graceful shutdown
+(qemu) quit              # Force quit
+\end{lstlisting}
+
+In \texttt{-nographic} mode, the monitor is accessed via \texttt{Ctrl-A C}.
+
+\section{Test Script}
+
+The \texttt{test.sh} script wraps the QEMU invocation with convenience
+options:
+
+\begin{lstlisting}[language=bash]
+#!/bin/bash
+# Direct kernel boot mode
+MEM=${MEM:-2G}
+
+qemu-system-x86_64 \
+    -kernel output/vmlinuz \
+    -append "console=ttyS0 console=tty1" \
+    -m "$MEM" \
+    -nographic \
+    -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+    -device virtio-net,netdev=net0 \
+    -drive file=output/state.img,format=raw,if=virtio
+\end{lstlisting}
+
+\section{Performance Tuning}
+
+\subsection{KVM Acceleration}
+
+Ensure the user is in the \texttt{kvm} group:
+\begin{lstlisting}[language=bash]
+sudo usermod -a -G kvm $USER
+# Re-login or run: newgrp kvm
+\end{lstlisting}
+
+\subsection{Huge Pages}
+
+Transparent Huge Pages (THP) improve memory performance:
+\begin{lstlisting}[language=bash]
+echo always > /sys/kernel/mm/transparent_hugepage/enabled
+\end{lstlisting}
+
+\subsection{CPU Pinning}
+
+For dedicated VMs, pin vCPUs to physical cores:
+\begin{lstlisting}
+-smp 2,cores=2,threads=1 \
+-object memory-backend-file,id=mem,size=2G,mem-path=/dev/hugepages \
+-numa node,memdev=mem
+\end{lstlisting}
+
+\section{Advanced QEMU Options}
+
+\subsection{Multiple Network Interfaces}
+
+Configure multiple NICs for advanced container networking:
+
+\begin{lstlisting}
+-netdev user,id=net0,hostfwd=tcp::2222-:22 \
+-netdev tap,id=net1,ifname=tap0,script=no,downscript=no \
+-device virtio-net,netdev=net0,mac=52:54:00:12:34:56 \
+-device virtio-net,netdev=net1,mac=52:54:00:12:34:57
+\end{lstlisting}
+
+\subsection{USB Passthrough}
+
+For bare-metal testing, USB devices can be passed to the guest:
+
+\begin{lstlisting}
+-usb -device usb-host,vendorid=0x1234,productid=0x5678
+\end{lstlisting}
+
+\subsection{VM Snapshots}
+
+QEMU supports VM snapshots for quick save/restore:
+
+\begin{lstlisting}
+# Start with snapshot support
+qemu-system-x86_64 ... -drive file=veilbox.raw,format=raw,snapshot=on
+
+# Create snapshot (in monitor)
+(qemu) savevm my_snapshot
+
+# Restore snapshot
+(qemu) loadvm my_snapshot
+\end{lstlisting}
+
+\subsection{Verbose Debug Output}
+
+Enable maximum debugging:
+
+\begin{lstlisting}
+-d cpu_reset,int,guest_errors,unimp \
+-trace events=/tmp/trace-events
+\end{lstlisting}
+
+\section{Disk Image Management}
+
+\subsection{Resizing the Disk Image}
+
+To increase the disk image size:
+
+\begin{lstlisting}[language=bash]
+# Resize raw image to 16 GB
+qemu-img resize output/veilbox.raw 16G
+
+# Resize the partition
+echo ', +' | sfdisk -N 1 output/veilbox.raw
+
+# Resize the filesystem
+# This requires loop mount or debugfs resize
+\end{lstlisting}
+
+\subsection{Converting Image Formats}
+
+\begin{lstlisting}[language=bash]
+# Raw to VDI (VirtualBox)
+qemu-img convert -f raw -O vdi veilbox.raw veilbox.vdi
+
+# Raw to VMDK (VMware)
+qemu-img convert -f raw -O vmdk veilbox.raw veilbox.vmdk
+
+# Raw to QCOW2 (QEMU native, compressed)
+qemu-img convert -f raw -O qcow2 veilbox.raw veilbox.qcow2
+
+# Raw to VHD (Hyper-V)
+qemu-img convert -f raw -O vpc veilbox.raw veilbox.vhd
+
+# Raw to compressed raw
+qemu-img convert -f raw -O raw -c veilbox.raw veilbox-compressed.raw
+\end{lstlisting}
+
+\section{Health Check Mode}
+
+The \texttt{--check} mode in test.sh automatically verifies that the
+system boots correctly. It uses \texttt{expect} to detect the login
+prompt:
+
+\begin{lstlisting}[language=bash]
+#!/bin/bash
+# --check mode: auto-detect login prompt
+expect << EOF
+set timeout 30
+spawn qemu-system-x86_64 -kernel output/vmlinuz -append \
+    "console=ttyS0 console=tty1" -m 2G -nographic \
+    -netdev user,id=net0 -device virtio-net,netdev=net0
+expect {
+    "veilbox login:" { exit 0 }
+    timeout { exit 1 }
+}
+EOF
+\end{lstlisting}

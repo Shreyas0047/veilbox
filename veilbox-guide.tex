@@ -1,0 +1,169 @@
+\documentclass[11pt,a4paper,twoside]{book}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in,headheight=14pt]{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, fit, backgrounds, calc}
+\usepackage[framemethod=TikZ]{mdframed}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{textcomp}
+
+\definecolor{codebg}{RGB}{15,17,23}
+\definecolor{codeborder}{RGB}{48,54,61}
+\definecolor{codefg}{RGB}{201,209,217}
+\definecolor{codekeyword}{RGB}{255,121,198}
+\definecolor{codecomment}{RGB}{106,115,125}
+\definecolor{codestring}{RGB}{63,185,80}
+\definecolor{titleblue}{RGB}{88,166,255}
+\definecolor{headingfg}{RGB}{240,246,252}
+\definecolor{bodyfg}{RGB}{200,210,220}
+\definecolor{pagedark}{RGB}{13,17,23}
+\definecolor{boxbg}{RGB}{22,27,34}
+\definecolor{accentgreen}{RGB}{46,160,67}
+\definecolor{accentorange}{RGB}{243,147,30}
+\definecolor{accentred}{RGB}{248,81,73}
+\definecolor{accentpurple}{RGB}{188,132,255}
+
+\pagecolor{pagedark}
+\color{bodyfg}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\color{bodyfg}\small\thepage}
+\fancyhead[LO]{\color{bodyfg}\small\leftmark}
+\fancyhead[RE]{\color{bodyfg}\small\leftmark}
+\renewcommand{\headrule}{\vspace{-1pt}\hrulefill}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\lstset{
+  language=bash,
+  backgroundcolor=\color{codebg},
+  basicstyle=\footnotesize\ttfamily\color{codefg},
+  keywordstyle=\color{codekeyword},
+  commentstyle=\color{codecomment},
+  stringstyle=\color{codestring},
+  numbers=left,
+  numberstyle=\tiny\color{codecomment},
+  numbersep=8pt,
+  frame=single,
+  rulecolor=\color{codeborder},
+  breaklines=true,
+  tabsize=2,
+  showstringspaces=false,
+  extendedchars=false,
+  xleftmargin=12pt,
+  xrightmargin=0pt,
+  aboveskip=10pt,
+  belowskip=10pt,
+}
+
+\newenvironment{infobox}[1][]{%
+  \mdframed[backgroundcolor=boxbg, linecolor=titleblue, linewidth=1pt,
+    roundcorner=4pt, skipabove=10pt, skipbelow=10pt, leftmargin=0pt,
+    rightmargin=0pt, innertopmargin=8pt, innerbottommargin=8pt,
+    innerleftmargin=10pt, innerrightmargin=10pt,
+    frametitle={\color{titleblue}#1}, frametitlealignment=\center]%
+}{%
+  \endmdframed%
+}
+
+\newenvironment{warningbox}[1][]{%
+  \mdframed[backgroundcolor=boxbg, linecolor=accentorange, linewidth=1pt,
+    roundcorner=4pt, skipabove=10pt, skipbelow=10pt,
+    frametitle={\color{accentorange}#1}, frametitlealignment=\center]%
+}{%
+  \endmdframed%
+}
+
+\newenvironment{successbox}[1][]{%
+  \mdframed[backgroundcolor=boxbg, linecolor=accentgreen, linewidth=1pt,
+    roundcorner=4pt, skipabove=10pt, skipbelow=10pt,
+    frametitle={\color{accentgreen}#1}, frametitlealignment=\center]%
+}{%
+  \endmdframed%
+}
+
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\Huge\bfseries\color{titleblue}}
+  {\color{codecomment}\chaptertitlename\ \thechapter}
+  {20pt}{\Huge}
+\titleformat{\section}
+  {\normalfont\Large\bfseries\color{titleblue}}
+  {\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{headingfg}}
+  {\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalfont\normalsize\bfseries\color{bodyfg}}
+  {\thesubsubsection}{1em}{}
+
+\tikzstyle{box} = [draw, rectangle, rounded corners=4pt,
+  minimum width=2.5cm, minimum height=0.8cm, text centered, text width=2.5cm,
+  font=\footnotesize\ttfamily, draw=codeborder, fill=boxbg, text=bodyfg]
+\tikzstyle{highlight} = [draw, rectangle, rounded corners=4pt,
+  minimum width=2.5cm, minimum height=0.8cm, text centered, text width=2.5cm,
+  font=\footnotesize\ttfamily, draw=titleblue, fill=boxbg, text=titleblue]
+\tikzstyle{arrow} = [thick,->,>=stealth,color=titleblue]
+\tikzstyle{arrowgray} = [thick,->,>=stealth,color=codecomment]
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\color{titleblue}\Huge\bfseries Veilbox\\[0.5cm]}
+{\color{bodyfg}\LARGE Build Guide \& Technical Reference\\[1.5cm]}
+{\color{codecomment}\Large Version 1.0 --- June 2026\\[3cm]}
+{\color{bodyfg}\large Built on Fedora 44 $\cdot$ Linux 7.1.0-rc6}\\[0.3cm]
+{\color{bodyfg}\large QEMU 10.2.2 $\cdot$ GRUB 2.x}\\[0.3cm]
+{\color{bodyfg}\large Containerd 1.7.13 $\cdot$ Dropbear 2024.85 $\cdot$ BusyBox 1.35.0}\\[1cm]
+{\color{accentgreen}\large Comprehensive Technical Reference --- 300+ Pages}\\
+\vfill
+{\color{codecomment}\small Generated with \LaTeX}
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+\include{chapters/ch01_overview}
+\include{chapters/ch02_architecture}
+\include{chapters/ch03_prereq}
+\include{chapters/ch04_build_pipeline}
+\include{chapters/ch05_kernel_config}
+\include{chapters/ch06_grub}
+\include{chapters/ch07_initramfs}
+\include{chapters/ch08_boot}
+\include{chapters/ch09_qemu}
+\include{chapters/ch10_services}
+\include{chapters/ch11_trouble}
+\include{chapters/ch12_kernel_build}
+\include{chapters/ch13_busybox}
+\include{chapters/ch14_init_system}
+\include{chapters/ch15_containerd}
+\include{chapters/ch16_dropbear}
+\include{chapters/ch17_network}
+\include{chapters/ch18_fs_layers}
+\include{chapters/ch19_security}
+\include{chapters/ch20_performance}
+\include{chapters/ch21_workloads}
+\include{chapters/ch22_comparison}
+\include{chapters/ch23_tutorials}
+\include{chapters/ch24_reference}
+\appendix
+\include{chapters/ch25_appendix}
+
+\end{document}

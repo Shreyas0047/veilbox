@@ -1,0 +1,218 @@
+\chapter{System Services}
+\label{ch:services}
+
+Veilbox runs four background services: DHCP client (udhcpc), system logger
+(syslogd), container runtime (containerd), and SSH server (Dropbear). This
+chapter documents each service's configuration, operation, and integration.
+
+\section{Service Architecture}
+
+All services are started by \texttt{/etc/init.d/rcS} during the sysinit
+phase of BusyBox init. They run in the background and are managed through
+simple shell scripts --- there is no systemd, no supervisor, no service
+manager.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=1cm]
+\node[highlight] (init) {BusyBox Init (PID 1)};
+\node[box, below left of=init, xshift=-2cm] (rcS) {/etc/init.d/rcS};
+\node[box, below of=rcS, xshift=-1.5cm] (dhcp) {udhcpc};
+\node[box, below of=rcS, xshift=0cm] (syslog) {syslogd};
+\node[box, below of=rcS, xshift=1.5cm] (ctrd) {containerd};
+\node[box, below of=rcS, xshift=3cm] (drop) {Dropbear};
+\draw[arrow] (init) -- (rcS);
+\draw[arrow] (rcS) -- (dhcp);
+\draw[arrow] (rcS) -- (syslog);
+\draw[arrow] (rcS) -- (ctrd);
+\draw[arrow] (rcS) -- (drop);
+\end{tikzpicture}
+\caption{Service startup hierarchy. BusyBox init runs rcS, which forks
+four background processes.}
+\label{fig:services}
+\end{figure}
+
+\section{udhcpc: DHCP Client}
+
+\subsection{Purpose}
+
+The BusyBox DHCP client (\texttt{udhcpc}) negotiates an IPv4 address from
+the network's DHCP server. In QEMU user-mode networking, the built-in SLiRP
+DHCP server assigns 10.0.2.15/24 with gateway 10.0.2.2.
+
+\subsection{Configuration}
+
+The DHCP client requires a script that configures the interface when an
+address is obtained. Veilbox provides:
+
+\begin{lstlisting}[language=bash]
+# /usr/share/udhcpc/default.script
+#!/bin/sh
+case "$1" in
+    bound|renew)
+        ifconfig $interface $ip netmask $subnet
+        route add default gw $router
+        echo "DNS: $dns" > /etc/resolv.conf
+        ;;
+    deconfig)
+        ifconfig $interface 0.0.0.0
+        ;;
+esac
+\end{lstlisting}
+
+\subsection{Operation}
+
+The script defines three actions:
+\begin{itemize}[nosep]
+  \item \texttt{bound}: Called when a lease is first acquired. Configures
+        the IP address, netmask, default route, and DNS.
+  \item \texttt{renew}: Called when a lease is renewed. Re-applies
+        network settings.
+  \item \texttt{deconfig}: Called when the interface is brought down.
+        Removes the IP address.
+\end{itemize}
+
+\subsection{Troubleshooting}
+
+Common DHCP issues:
+\begin{itemize}[nosep]
+  \item \texttt{udhcpc: ifconfig failed}: The interface name does not
+        match. Verify with \texttt{ip link show}. Default is \texttt{eth0}.
+  - \texttt{No DHCPOFFERS received}: The virtual network is not configured.
+        Add \texttt{-netdev user,...} to QEMU command line.
+  - \texttt{Lease failed, renewing in 60s}: The DHCP server is slow or
+        unreachable. Verify QEMU's SLiRP is running.
+\end{itemize}
+
+\section{syslogd: System Logger}
+
+\subsection{Purpose}
+
+BusyBox syslogd captures kernel log messages (from /proc/kmsg) and process
+messages (from /dev/log) and writes them to /var/log/messages.
+
+\subsection{Configuration}
+
+\begin{lstlisting}[language=bash]
+syslogd -O /var/log/messages -s 64
+\end{lstlisting}
+
+Options:
+\begin{itemize}[nosep]
+  \item \texttt{-O}: Output file path.
+  \item \texttt{-s}: Maximum message size (64 KB).
+\end{itemize}
+
+\subsection{Log Format}
+
+Each log entry follows the standard syslog format:
+\begin{lstlisting}
+Jun  7 10:15:30 veilbox daemon.info containerd[42]: starting...
+Jun  7 10:15:31 veilbox auth.info dropbear[58]: Running as server
+\end{lstlisting}
+
+\section{containerd: Container Runtime}
+
+\subsection{Purpose}
+
+Containerd is an industry-standard container runtime that manages the
+complete container lifecycle: image pull, storage, execution, and
+monitoring. It communicates via a gRPC API over a Unix domain socket.
+
+\subsection{Configuration}
+
+\begin{lstlisting}
+# /etc/containerd/config.toml
+version = 2
+root = "/mnt/state/containerd"
+state = "/run/containerd"
+
+[grpc]
+  address = "/run/containerd/containerd.sock"
+  uid = 0
+  gid = 0
+
+[metrics]
+  address = "127.0.0.1:1338"
+
+[plugins]
+  [plugins."io.containerd.grpc.v1.cri"]
+    sandbox_image = "registry.k8s.io/pause:3.9"
+\end{lstlisting}
+
+\subsection{Startup}
+
+\begin{lstlisting}[language=bash]
+containerd -c /etc/containerd/config.toml &
+\end{lstlisting}
+
+\subsection{Interaction}
+
+Use nerdctl to interact with containerd:
+\begin{lstlisting}
+nerdctl images                   # List pulled images
+nerdctl pull alpine:latest       # Pull an image
+nerdctl run -it alpine:latest sh # Run a container
+nerdctl ps -a                    # List all containers
+nerdctl logs <id>               # View container logs
+\end{lstlisting}
+
+\section{Dropbear: SSH Server}
+
+\subsection{Purpose}
+
+Dropbear is a lightweight SSH server (approximately 140 KB) that provides
+encrypted remote access to the Veilbox shell. It supports key-based and
+password authentication.
+
+\subsection{Configuration}
+
+\begin{lstlisting}[language=bash]
+dropbear -F -R -p 22
+\end{lstlisting}
+
+Options:
+\begin{itemize}[nosep]
+  \item \texttt{-F}: Run in foreground (for rcS).
+  \item \texttt{-R}: Automatically create host keys if missing.
+  \item \texttt{-p 22}: Listen on port 22.
+  \item \texttt{-w}: Disallow root password login (not used in Veilbox).
+\end{itemize}
+
+\subsection{Host Keys}
+
+Dropbear generates two host keys during build:
+\begin{itemize}[nosep]
+  \item \texttt{/etc/dropbear/dropbear\_ed25519\_host\_key}: ED25519 key
+        (fast, modern, recommended).
+  \item \texttt{/etc/dropbear/dropbear\_rsa\_host\_key}: RSA 2048-bit
+        key (fallback for older clients).
+\end{itemize}
+
+\subsection{Authentication Methods}
+
+\begin{itemize}[nosep]
+  \item \textbf{Password}: User \texttt{root} with password \texttt{veiladmin}.
+        The password is hashed with SHA-512 in /etc/shadow.
+  \item \textbf{Public key}: ED25519 key in
+        \texttt{/etc/dropbear/authorized\_keys}. The private key is
+        provided in the output directory.
+\end{itemize}
+
+\subsection{Connecting}
+
+\begin{lstlisting}[language=bash]
+ssh -i output/ssh-test-key root@localhost -p 2222
+# Or with password:
+ssh root@localhost -p 2222
+# Password: veiladmin
+\end{lstlisting}
+
+\section{Service Logging}
+
+All service output can be monitored:
+\begin{lstlisting}
+cat /var/log/messages          # System log
+nerdctl logs <container-id>   # Container logs
+dropbear -F -E                 # Verbose SSH debug
+\end{lstlisting}

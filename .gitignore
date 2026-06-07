@@ -1,0 +1,108 @@
+# =============================================================================
+# Veilbox .gitignore
+# Only Veilbox-specific source files are tracked.  Everything else (kernel
+# source tree, build artifacts, downloaded binaries) is excluded.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Kernel build artifacts
+# ---------------------------------------------------------------------------
+.config
+.config.*
+.config_*
+*.cmd
+..*.cmd
+built-in.a
+vmlinux*
+Module.symvers
+modules.*
+System.map
+*.o
+*.o.cmd
+*.a
+*.ko
+*.symversions
+/linux-*/
+
+# ---------------------------------------------------------------------------
+# Downloaded archives — build.sh fetches these
+# ---------------------------------------------------------------------------
+*.tar.*
+*.tar.bz2
+*.tar.gz
+*.tgz
+runc.amd64
+/dropbear-*/
+/containerd-*/
+/nerdctl-*/
+
+# ---------------------------------------------------------------------------
+# Output build artifacts — large binaries (vmlinuz, vdi tracked via LFS)
+# ---------------------------------------------------------------------------
+/output/veilbox.raw
+/output/state.img
+/output/rootfs.squashfs
+
+# ---------------------------------------------------------------------------
+# Rootfs binaries — build.sh populates these at build time
+# ---------------------------------------------------------------------------
+/rootfs/bin/busybox
+/rootfs/lib64/
+/rootfs/usr/bin/containerd
+/rootfs/usr/bin/containerd-shim*
+/rootfs/usr/bin/containerd-stress
+/rootfs/usr/bin/containerd-rootless*
+/rootfs/usr/bin/ctr
+/rootfs/usr/bin/nerdctl
+/rootfs/usr/bin/runc
+/rootfs/usr/sbin/dropbear
+/rootfs/etc/dropbear/dropbear_*_host_key
+/rootfs/etc/dropbear/dropbear_*_host_key.pub
+/rootfs/root/.ssh/id_ed25519
+
+# ---------------------------------------------------------------------------
+# LaTeX build artifacts
+# ---------------------------------------------------------------------------
+*.aux
+*.log
+*.toc
+*.out
+*~
+
+# ---------------------------------------------------------------------------
+# Initramfs generated files
+# ---------------------------------------------------------------------------
+/initramfs.list
+
+# ---------------------------------------------------------------------------
+# OS junk
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# ---------------------------------------------------------------------------
+# Kernel source tree directories (not part of Veilbox)
+# ---------------------------------------------------------------------------
+/arch/
+/block/
+/certs/
+/crypto/
+/Documentation/
+/drivers/
+/fs/
+/include/
+/init/
+/io_uring/
+/ipc/
+/kernel/
+/lib/
+/mm/
+/net/
+/rust/
+/samples/
+/scripts/
+/security/
+/sound/
+/tools/
+/usr/
+/virt/

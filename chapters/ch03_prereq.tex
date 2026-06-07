@@ -1,0 +1,225 @@
+\chapter{Prerequisites}
+\label{ch:prereq}
+
+Before building Veilbox, the host system must meet specific hardware and
+software requirements. This chapter documents every prerequisite, from
+the Fedora version and kernel release to the precise toolchain versions
+needed for successful compilation.
+
+\section{Hardware Requirements}
+
+\subsection{Build Machine}
+
+Building the Veilbox kernel and initramfs requires a machine with the
+following minimum specifications:
+
+\begin{itemize}[nosep]
+  \item \textbf{CPU}: x86\_64, dual-core or better. Kernel compilation is
+        heavily parallelized (make -j\$(nproc)), so more cores dramatically
+        reduce build time. A four-core CPU completes a full build in
+        approximately 5 minutes; a single-core CPU may take 20+ minutes.
+  \item \textbf{RAM}: 4 GB minimum, 8 GB recommended. The kernel build
+        process spawns multiple GCC instances, each consuming 200--500 MB
+        of memory. The embedded initramfs (approximately 90 MB when
+        uncompressed) must fit in the kernel's temporary build directory.
+  \item \textbf{Storage}: 20 GB free. The Linux kernel source tree occupies
+        approximately 6 GB after extraction (or 3.5 GB as a Git clone with
+        history). Build artifacts (object files, .o files, final binaries)
+        add another 4--6 GB. The output disk image is 8 GB.
+  \item \textbf{Network}: Broadband internet connection for downloading
+        kernel source, BusyBox, containerd, runc, nerdctl, and Dropbear
+        tarballs. Total download size is approximately 200 MB.
+\end{itemize}
+
+\subsection{Test/Runtime Machine}
+
+The Veilbox disk image runs on any x86\_64 machine with:
+
+\begin{itemize}[nosep]
+  \item \textbf{RAM}: 2 GB minimum. The initramfs occupies approximately
+        90 MB of RAM; the kernel uses about 50 MB; containerd, runc, and
+        Dropbear add another 50 MB combined. The remaining memory is
+        available for containers.
+  \item \textbf{Storage}: 8 GB disk (raw or virtual). The VEILBOX partition
+        uses approximately 500 MB for the kernel, GRUB modules, and state
+        directory. The remaining ~6.5 GB is unused and available for
+        container images and volumes on the state partition.
+  \item \textbf{Display}: VGA text console (1024x768 minimum) or serial
+        console (9600 baud, 8N1). No graphical output is required.
+  \item \textbf{Network}: Any Ethernet adapter (virtio-net, e1000, rtl8139
+        for VMs; Intel e1000e, Realtek for bare metal).
+\end{itemize}
+
+\section{Software Requirements}
+
+\subsection{Host Operating System}
+
+The build script was developed and tested on Fedora 44, but any Linux
+distribution with GCC 14+, GNU Make 4.4+, and Python 3.10+ should work.
+
+\begin{longtable}{|p{4cm}|p{4cm}|p{4cm}|}
+\hline
+\textbf{Distribution} & \textbf{Status} & \textbf{Notes} \\
+\hline
+Fedora 44 & Verified & Primary development platform. \\
+Fedora 43 & Compatible & May require updated packages. \\
+RHEL 9 / CentOS 9 & Compatible & EPEL repository needed. \\
+Debian 12 / Ubuntu 24.04 & Compatible & Package names differ. \\
+Arch Linux & Compatible & Use distro-specific package names. \\
+\hline
+\end{longtable}
+
+\subsection{Kernel Source}
+
+The kernel source is obtained from kernel.org or a Git mirror:
+
+\begin{itemize}[nosep]
+  \item \textbf{Base version}: 7.1.0-rc6 (verified working).
+  \item \textbf{Source URL}: \url{https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.1.0-rc6.tar.xz}
+  \item \textbf{Size}: Approximately 145 MB compressed, 1.1 GB extracted.
+  \item \textbf{Alternate source}: Git clone from \url{https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git}
+\end{itemize}
+
+The build script (\texttt{build.sh}) downloads and extracts the kernel
+automatically. It checks for an existing \texttt{linux-7.1.0-rc6/} directory
+and skips extraction if present.
+
+\subsection{Toolchain}
+
+The following tools must be installed on the build machine:
+
+\begin{longtable}{|p{4cm}|p{3cm}|p{5cm}|}
+\hline
+\textbf{Tool} & \textbf{Version} & \textbf{Purpose} \\
+\hline
+GCC & 14+ & Kernel and BusyBox compilation. \\
+GNU Make & 4.4+ & Build system orchestration. \\
+GNU Binutils & 2.46+ & Assembly, linking, object manipulation. \\
+flex & 2.6+ & Kernel configuration parser. \\
+bison & 3.8+ & Kernel configuration parser. \\
+bc & 1.07+ & Kernel build-time calculations. \\
+OpenSSL dev & 3.0+ & Kernel module signing headers. \\
+elfutils-libelf-devel & 0.190+ & Kernel build headers (libelf). \\
+perl & 5.36+ & Kernel build scripts. \\
+python3 & 3.10+ & Kernel configuration tools. \\
+rsync & 3.2+ & File synchronization. \\
+cpio & 2.13+ & Initramfs cpio archive. \\
+xz & 5.4+ & Kernel compression support. \\
+qemu-img & 7.0+ & Disk image format conversion. \\
+debugfs & 1.47+ & Rootless ext4 filesystem population. \\
+sfdisk & 2.39+ & Disk partitioning. \\
+grub2-tools & 2.06+ & GRUB core.img generation. \\
+qemu-system-x86\_64 & 7.0+ & VM testing. \\
+\hline
+\end{longtable}
+
+\subsection{Installation Commands}
+
+On Fedora:
+\begin{lstlisting}
+sudo dnf install gcc make flex bison bc openssl-devel \
+  elfutils-libelf-devel perl python3 rsync cpio xz \
+  qemu-img e2fsprogs util-linux grub2-tools \
+  qemu-system-x86-x86_64
+\end{lstlisting}
+
+On Debian/Ubuntu:
+\begin{lstlisting}
+sudo apt install gcc make flex bison bc libssl-dev \
+  libelf-dev perl python3 rsync cpio xz-utils \
+  qemu-utils e2fsprogs util-linux grub2-common \
+  qemu-system-x86
+\end{lstlisting}
+
+\subsection{Kernel Configuration Dependencies}
+
+The kernel build system requires several host utilities that are not
+always installed by default. The build script's \texttt{install\_deps()}
+function checks for each of these and reports missing dependencies before
+starting the build.
+
+\begin{itemize}[nosep]
+  \item \texttt{hostname}: Used by kernel makefiles for build identification.
+  \item \texttt{getconf}: Determines number of CPU cores for parallel builds.
+  \item \texttt{tee}: Logging build output to stdout and log file.
+  \item \texttt{curl} or \texttt{wget}: Downloading source tarballs.
+  \item \texttt{sha256sum}: Verifying downloaded file integrity.
+  \item \texttt{bash 5+}: The build script requires bash-specific features
+        (arrays, process substitution, \texttt{[[ ]]}) tests.
+\end{itemize}
+
+\section{Network Requirements}
+
+\subsection{Build-Time Network Access}
+
+The build script requires internet access for:
+
+\begin{enumerate}[nosep]
+  \item Downloading the Linux kernel source tarball.
+  \item Downloading BusyBox source from busybox.net.
+  \item Downloading containerd, runc, and nerdctl from GitHub releases.
+  \item Downloading Dropbear SSH from dropbear.nl.
+  \item (Optional) Cloning kernel Git repository.
+\end{enumerate}
+
+All downloads are cached in the host \$HOME/veilbox-cache directory
+for offline builds.
+
+\subsection{Runtime Network (Guest)}
+
+The guest OS requires:
+\begin{itemize}[nosep]
+  \item A DHCP server on the virtual network. QEMU provides this via
+        SLiRP (user-mode networking) by default.
+  \item Internet access via NAT or bridged networking for container image
+        pulls.
+  \item Port 22 reachable on the guest IP for SSH access.
+\end{itemize}
+
+\section{Virtualization Requirements}
+
+\subsection{QEMU}
+
+QEMU version 7.0 or later with KVM support is recommended for testing.
+The test.sh script expects:
+
+\begin{itemize}[nosep]
+  \item \texttt{qemu-system-x86\_64} binary in PATH.
+  \item KVM device (\texttt{/dev/kvm}) accessible. On most distributions,
+        the user must be in the \texttt{kvm} group.
+  \item Approximately 2 GB of available host RAM for the guest VM.
+  \item For \texttt{-nographic} mode: a terminal emulator that supports
+        the serial console (any modern terminal works).
+\end{itemize}
+
+\subsection{VirtualBox (Alternative)}
+
+For VirtualBox deployment:
+\begin{itemize}[nosep]
+  \item VirtualBox 6.1+ or 7.0+ with Extension Pack (for VirtIO support).
+  \item Import the VDI file via File $\rightarrow$ Import Appliance.
+  \item Configure: 2 GB RAM, 1 CPU, VirtIO-Net adapter, enable serial
+        port (optional).
+\end{itemize}
+
+\section{User Privileges}
+
+One of the design goals of Veilbox is a completely rootless build. No
+sudo access is required for any stage of the build process:
+
+\begin{itemize}[nosep]
+  \item \textbf{Kernel compilation}: make, gcc, and ld all run as the
+        regular user.
+  \item \textbf{Filesystem creation}: debugfs writes files into the ext4
+        image without requiring loop device access (which would need root).
+  \item \textbf{GRUB installation}: A Python script writes boot sectors
+        directly to the raw disk image file. No loop device mount needed.
+  \item \textbf{Disk partitioning}: sfdisk writes the MBR partition table
+        to a regular file.
+  \item \textbf{Format conversion}: qemu-img reads the raw image and
+        creates VDI output.
+\end{itemize}
+
+The only exception is dependency installation: \texttt{install\_deps()}
+uses sudo to run \texttt{dnf install}. If sudo is not available or
+passwordless, the script prints the required package list and continues.

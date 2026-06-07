@@ -1,0 +1,10 @@
+root = "/mnt/state/containerd"
+state = "/run/containerd"
+
+disabled_plugins = ["cri"]
+
+[grpc]
+  address = "/run/containerd/containerd.sock"
+
+[metrics]
+  address = ""

@@ -1,0 +1,213 @@
+\chapter{Security Hardening}
+\label{ch:security}
+
+Security is a primary design goal for Veilbox. The system is hardened at
+every layer: kernel configuration reduces the attack surface, BusyBox
+eliminates setuid binaries, Dropbear provides encrypted access, and
+container runtimes use Linux security primitives.
+
+\section{Kernel Security Features}
+
+\subsection{Minimal Attack Surface}
+
+The kernel is configured without unnecessary subsystems:
+\begin{itemize}[nosep]
+  \item No sound subsystem (CONFIG\_SOUND=n).
+  \item No USB stack (CONFIG\_USB=n).
+  \item No Wi-Fi or Bluetooth (CONFIG\_WLAN=n, CONFIG\_BT=n).
+  \item No ATA or SCSI drivers (CONFIG\_ATA=n, CONFIG\_SCSI=n).
+  \item No filesystems beyond ext4, proc, sysfs, tmpfs, devtmpfs,
+        overlay, squashfs.
+  \item No PCMCIA, FireWire, InfiniBand, or ISDN.
+\end{itemize}
+
+\subsection{Mandatory Security Options}
+
+\begin{lstlisting}
+CONFIG_SECCOMP=y           # Syscall filtering
+CONFIG_SECCOMP_FILTER=y    # BPF-based filters
+CONFIG_SECURITY=y          # Security framework
+CONFIG_SECURITY_YAMA=y     # Ptrace scope restrictions
+CONFIG_DEFAULT_SECURITY_YAMA=y
+CONFIG_SECURITY_NETWORK=y  # Network security hooks
+\end{lstlisting}
+
+\subsection{CGroup Device Control}
+
+CGroup device controllers restrict container access to host devices:
+
+\begin{lstlisting}
+CONFIG_CGROUP_DEVICE=y
+\end{lstlisting}
+
+\section{Userspace Security}
+
+\subsection{No Setuid Binaries}
+
+The Veilbox root filesystem contains no setuid binaries. BusyBox can be
+configured with setuid support disabled:
+
+\begin{lstlisting}[language=bash]
+# BusyBox config: disable setuid
+# CONFIG_FEATURE_SUID is not set
+\end{lstlisting}
+
+\subsection{No Package Manager}
+
+Without a package manager, there is no mechanism for an attacker to
+install software, exploit repository vulnerabilities, or run
+post-install scripts.
+
+\subsection{No Compilers}
+
+No compilers or interpreters (other than busybox ash) are present in the
+root filesystem. An attacker who gains shell access cannot compile
+exploit code.
+
+\subsection{Read-Only Root}
+
+The root filesystem is embedded in the kernel binary. Runtime modification
+of system binaries is impossible — changes are lost on reboot.
+
+\subsection{Minimal Services}
+
+Only two network services run: Dropbear (SSH) and containerd (local Unix
+socket only). No HTTP, FTP, SMTP, NFS, SMB, or any other services.
+
+\section{SSH Hardening}
+
+\begin{itemize}[nosep]
+  \item \textbf{ED25519 keys}: Modern, fast, secure host keys.
+  \item \textbf{PBKDF2 password hash}: /etc/shadow uses SHA-512 rounds.
+  \item \textbf{Port forwarding}: QEMU limits SSH to port forwarding
+        only (no public guest IP by default).
+  \item \textbf{Key-based auth}: Optional but supported with auto-generated
+        ED25519 key pair.
+\end{itemize}
+
+\section{Container Security Primitives}
+
+\subsection{Namespace Isolation}
+
+Each container runs in isolated namespaces:
+\begin{itemize}[nosep]
+  \item \textbf{PID}: Container processes cannot see host processes.
+  \item \textbf{Network}: Container has its own network stack.
+  \item \textbf{Mount}: Container has its own filesystem hierarchy.
+  \item \textbf{UTS}: Container has its own hostname.
+  \item \textbf{IPC}: Container has its own IPC resources.
+  \item \textbf{User}: (Optional) Container root can be mapped to an
+        unprivileged host user.
+\end{itemize}
+
+\subsection{Seccomp}
+
+Seccomp-BPF filters restrict the system calls available to container
+processes. The default Docker/containerd seccomp profile allows
+approximately 300 of the 400+ Linux syscalls, blocking dangerous ones
+like \texttt{module\_init}, \texttt{kexec\_load}, and \texttt{ptrace}.
+
+\subsection{Capability Dropping}
+
+Linux capabilities are dropped from container processes:
+\begin{lstlisting}
+CAP_SYS_ADMIN     # Mount, namespace operations
+CAP_NET_ADMIN     # Network configuration
+CAP_SYS_MODULE    # Kernel module loading
+CAP_SYS_RAWIO     # I/O port access
+CAP_SYS_PTRACE    # Process tracing
+\end{lstlisting}
+
+
+\section{Container Security Architecture}
+
+\subsection{Defense in Depth}
+
+Veilbox implements multiple layers of container security:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Namespaces}: Each container has isolated views of the
+        system (processes, network, mounts, etc.).
+  \item \textbf{Cgroups}: Resource limits prevent denial-of-service
+        from a single container.
+  \item \textbf{Seccomp-BPF}: System call filtering blocks dangerous
+        syscalls.
+  \item \textbf{Capability dropping}: Removes privileges like
+        CAP\_SYS\_ADMIN and CAP\_NET\_ADMIN.
+  \item \textbf{Read-only rootfs}: Containers can be started with
+        read-only root filesystems.
+  \item \textbf{No new privileges}: The NO\_NEW\_PRIVS flag prevents
+        privilege escalation via setuid binaries.
+\end{enumerate}
+
+\subsection{Seccomp Default Profile}
+
+The default seccomp profile blocks approximately 60 system calls that
+are dangerous or unnecessary for containers:
+
+\begin{lstlisting}
+# Blocked syscalls (partial list)
+kexec_load        # Loading a different kernel
+open_by_handle_at # Bypass mount namespace
+init_module       # Loading kernel modules
+finit_module      # Loading kernel modules
+delete_module     # Unloading kernel modules
+ptrace            # Process tracing and debugging
+swapon            # Enabling swap
+swapoff           # Disabling swap
+sethostname       # Changing hostname
+setdomainname     # Changing domain name
+\end{lstlisting}
+
+\subsection{SELinux Considerations}
+
+Veilbox does not use SELinux (it adds complexity and binary size). For
+systems requiring SELinux:
+
+\begin{lstlisting}
+CONFIG_SECURITY_SELINUX=y
+CONFIG_DEFAULT_SECURITY_SELINUX=y
+\end{lstlisting}
+
+However, this requires SELinux policies and tools which add approximately
+10 MB to the initramfs.
+
+\section{Audit Trail}
+
+The system log captures security-relevant events:
+
+\begin{lstlisting}
+# Monitor authentication attempts
+grep "dropbear" /var/log/messages
+
+# Monitor container starts/stops
+grep "containerd" /var/log/messages
+
+# Monitor failed login attempts
+grep "Failed" /var/log/messages
+\end{lstlisting}
+
+\section{Network Security}
+
+\subsection{Firewall Rules}
+
+Basic iptables rules for container isolation:
+
+\begin{lstlisting}
+# Default: drop incoming, allow outgoing
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+
+# Allow loopback
+iptables -A INPUT -i lo -j ACCEPT
+
+# Allow established connections
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# Allow SSH
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+
+# Allow container traffic to external
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+\end{lstlisting}

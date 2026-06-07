@@ -1,0 +1,301 @@
+\chapter{Containerd}
+\label{ch:containerd}
+
+Containerd is the container runtime at the heart of Veilbox. It manages
+the full container lifecycle — pulling images, creating snapshots,
+starting processes, and monitoring execution. This chapter explains its
+architecture, configuration, and integration with the rest of the system.
+
+\section{Containerd Architecture}
+
+Containerd is organized into several layers:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.8cm]
+\node[highlight] (nerdctl) {nerdctl (CLI)};
+\node[box, below of=nerdctl] (grpc) {gRPC API};
+\node[box, below of=grpc] (svc) {Services Layer};
+\node[box, below left of=svc, xshift=-1.5cm] (images) {Images};
+\node[box, below of=svc] (snap) {Snapshots};
+\node[box, below right of=svc, xshift=1.5cm] (cont) {Containers};
+\node[box, below of=snap] (runc) {runc (OCI)};
+\draw[arrow] (nerdctl) -- (grpc);
+\draw[arrow] (grpc) -- (svc);
+\draw[arrow] (svc) -- (images);
+\draw[arrow] (svc) -- (snap);
+\draw[arrow] (svc) -- (cont);
+\draw[arrow] (snap) -- (runc);
+\draw[arrow] (cont) -- (runc);
+\end{tikzpicture}
+\caption{Containerd layered architecture. nerdctl communicates via gRPC
+with the containerd daemon, which manages images, snapshots, and
+container processes through runc.}
+\label{fig:containerd}
+\end{figure}
+
+\subsection{gRPC API Layer}
+
+Containerd exposes a gRPC API on a Unix domain socket at
+\texttt{/run/containerd/containerd.sock}. The API is organized into
+several services:
+
+\begin{itemize}[nosep]
+  \item \textbf{Namespace service}: Create, list, remove namespaces.
+  - \textbf{Image service}: Pull, push, list, tag, remove images.
+  - \textbf{Container service}: Create, start, stop, delete containers.
+  - \textbf{Task service}: Attach to container processes, read logs.
+  - \textbf{Snapshotter service}: Manage filesystem snapshots for image
+        layers.
+  - \textbf{Diff service}: Create and apply layer diffs.
+\end{itemize}
+
+\subsection{Client Libraries}
+
+Clients can interact with containerd via:
+\begin{itemize}[nosep]
+  \item \textbf{ctr}: The containerd-native CLI (minimal, debugging).
+  - \textbf{nerdctl}: Docker-compatible CLI (user-friendly).
+  - \textbf{Go client}: \texttt{github.com/containerd/containerd} Go
+        package for programmatic access.
+  - \textbf{containerd-shim}: Shim process that sits between containerd
+        and runc, enabling live-upgrade of containerd without stopping
+        containers.
+\end{itemize}
+
+\section{Image Management}
+
+\subsection{Image Pull Flow}
+
+When a user runs \texttt{nerdctl pull alpine:latest}:
+
+\begin{enumerate}[nosep]
+  \item nerdctl sends a \texttt{PullImage} gRPC request to containerd.
+  \item containerd resolves the image reference (e.g.,
+        \texttt{docker.io/library/alpine:latest}) through configured
+        registries.
+  \item containerd authenticates with the registry (if credentials are
+        configured).
+  \item containerd downloads the image manifest (JSON) which lists the
+        configuration and layer blobs.
+  \item For each layer blob, containerd verifies the digest (SHA256),
+        downloads the compressed blob, and decompresses it.
+  \item The snapshotter creates a new snapshot for each layer.
+  \item The image is registered in containerd's content store and
+        metadata database.
+\end{enumerate}
+
+\subsection{Image Storage}
+
+Images are stored in two locations:
+
+\begin{itemize}[nosep]
+  \item \textbf{Content store}: \texttt{/mnt/state/containerd/blobs/}.
+        Blobs are stored by content hash (SHA256). Each blob is a
+        subdirectory named by the first two hex characters of the hash.
+  \item \textbf{Metadata}: \texttt{/mnt/state/containerd/metadata/}.
+        BoltDB database tracking image references, layer metadata, and
+        container state.
+\end{itemize}
+
+\section{Container Lifecycle}
+
+\subsection{Creating a Container}
+
+\begin{lstlisting}
+nerdctl run -d --name web nginx:alpine
+\end{lstlisting}
+
+Steps:
+\begin{enumerate}[nosep]
+  \item containerd creates a new container object in the metadata store.
+  \item The snapshotter creates a writable snapshot on top of the image
+        layers (using OverlayFS).
+  \item containerd generates an OCI specification (config.json) that
+        describes the container's rootfs, mounts, environment variables,
+        command, resource limits, and security settings.
+  \item containerd starts the containerd-shim process, passing the
+        container ID and bundle path.
+  \item The shim launches runc with the OCI bundle, creating the
+        container's namespaces, cgroups, and process.
+\end{enumerate}
+
+\subsection{Running Containers}
+
+\begin{lstlisting}
+nerdctl ps                    # List running containers
+nerdctl exec -it web sh       # Execute command in container
+nerdctl logs web              # View container logs
+nerdctl stats                 # Resource usage
+nerdctl stop web              # Graceful stop (SIGTERM)
+nerdctl rm web                # Remove container
+\end{lstlisting}
+
+\section{Containerd Configuration}
+
+\begin{lstlisting}
+# /etc/containerd/config.toml
+version = 2
+root = "/mnt/state/containerd"
+state = "/run/containerd"
+
+[grpc]
+  address = "/run/containerd/containerd.sock"
+
+[plugins]
+  [plugins."io.containerd.grpc.v1.cri"]
+    sandbox_image = "registry.k8s.io/pause:3.9"
+  [plugins."io.containerd.snapshotter.v1.overlayfs"]
+    root_path = "/mnt/state/containerd/snapshots"
+\end{lstlisting}
+
+\section{Integration with Veilbox}
+
+Containerd is started in rcS:
+
+\begin{lstlisting}[language=bash]
+containerd -c /etc/containerd/config.toml &
+sleep 2  # Wait for gRPC socket
+nerdctl pull alpine:latest &
+\end{lstlisting}
+
+The gRPC socket at \texttt{/run/containerd/containerd.sock} is available
+for local clients. No network port is exposed (containerd listens on a
+Unix socket only).
+
+\section{Containerd Namespaces}
+
+Containerd supports multiple namespaces for tenant isolation:
+
+\begin{lstlisting}
+# List namespaces
+ctr namespaces ls
+
+# Create a namespace
+ctr namespaces create tenant1
+
+# Run container in namespace
+nerdctl --namespace tenant1 run alpine echo hello
+
+# View containers by namespace
+nerdctl --namespace tenant1 ps -a
+nerdctl --namespace k8s.io ps -a  # Kubernetes namespace
+\end{lstlisting}
+
+\section{Image Management Internals}
+
+\subsection{Image Pull}
+
+When pulling an image, containerd performs these steps:
+
+\begin{lstlisting}
+# Trace image pull
+ctr images pull docker.io/library/alpine:latest
+
+# Show image metadata
+ctr images ls -q
+
+# Export image to tar
+ctr images export alpine.tar docker.io/library/alpine:latest
+
+# Import image from tar
+ctr images import alpine.tar
+\end{lstlisting}
+
+\subsection{Content Addressable Storage}
+
+Images are stored using content-addressable storage (CAS). Each blob
+is identified by its SHA256 digest:
+
+\begin{lstlisting}
+# Content store location
+ls /mnt/state/containerd/blobs/sha256/
+
+# View blob metadata
+cat /mnt/state/containerd/blobs/sha256/<hash>
+
+# Check content store size
+du -sh /mnt/state/containerd/
+\end{lstlisting}
+
+\section{Snapshotter Plugins}
+
+Containerd supports multiple snapshotter backends:
+
+\begin{longtable}{|p{3.5cm}|p{4cm}|p{4cm}|}
+\hline
+\textbf{Snapshotter} & \textbf{Description} & \textbf{Performance} \\
+\hline
+overlayfs & Native OverlayFS (recommended) & Best \\
+native & Copy-on-write via hard links & Worst \\
+devmapper & Device-mapper thin provisioning & Medium \\
+btrfs & Btrfs snapshots & Good \\
+fuse-overlayfs & FUSE-based OverlayFS & Slow \\
+nydus & Nydus snapshotter (lazy pull) & Fast pull \\
+\hline
+\end{longtable}
+
+Veilbox uses overlayfs by default, which provides the best performance
+for container workloads.
+
+\section{Containerd Event Monitoring}
+
+Containerd emits events for monitoring and automation:
+
+\begin{lstlisting}
+# Stream all events (in real time)
+ctr events
+
+# Filter events by topic
+ctr events | grep "image/pull"
+
+# List recent events (from log)
+grep containerd /var/log/messages | tail -20
+\end{lstlisting}
+
+\section{Resource Requirements}
+
+Containerd in Veilbox requires:
+
+\begin{itemize}[nosep]
+  \item \textbf{Disk space}: Minimum 256 MB free on state partition for
+        image pulls. Recommended: 1+ GB for multiple images.
+  \item \textbf{Memory}: Approximately 30 MB for the containerd daemon
+        itself. Container memory usage depends on the workload.
+  \item \textbf{File descriptors}: Containerd may use 100+ file
+        descriptors when managing multiple containers.
+\end{itemize}
+
+Container resource limits are set per-container:
+
+\begin{lstlisting}
+# Memory limit
+nerdctl run --memory=256m nginx:alpine
+
+# CPU limit
+nerdctl run --cpus=0.5 nginx:alpine
+
+# PIDs limit
+nerdctl run --pids-limit=100 nginx:alpine
+
+# Block I/O limit
+nerdctl run --blkio-weight=500 nginx:alpine
+\end{lstlisting}
+
+\section{Logging Driver}
+
+Containerd supports configurable logging:
+
+\begin{lstlisting}
+# Configuring log rotation in config.toml
+[plugins."io.containerd.grpc.v1.cri".containerd]
+  [plugins."io.containerd.grpc.v1.cri".containerd.default_runtime]
+    runtime_type = "io.containerd.runc.v2"
+
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+
+[plugins."io.containerd.grpc.v1".cni]
+  bin_dir = "/opt/cni/bin"
+  conf_dir = "/etc/cni/net.d"
+\end{lstlisting}

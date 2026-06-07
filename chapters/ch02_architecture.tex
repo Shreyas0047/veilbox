@@ -1,0 +1,300 @@
+\chapter{System Architecture}
+\label{ch:arch}
+
+Veilbox is designed as a layered system with clearly separated abstraction
+boundaries. Each layer depends only on the layer below it and provides a
+well-defined interface to the layer above. This chapter presents the
+architecture at multiple levels of abstraction.
+
+\section{Eight-Layer Architecture}
+
+The system is organized into eight layers, from hardware at the bottom to
+the user interface at the top. Each layer has a specific responsibility and
+communicates with adjacent layers through standardized interfaces.
+
+\subsection{Layer 1: Hardware}
+
+The physical or virtual hardware provides the computing resources: CPU,
+memory, storage, and networking. In a typical deployment, this is a QEMU/KVM
+virtual machine with VirtIO paravirtualized devices. However, Veilbox boots
+on any x86\_64 platform that provides:
+
+\begin{itemize}[nosep]
+  \item A BIOS or UEFI firmware interface.
+  \item A bootable disk (IDE, SATA, VirtIO-BLK, NVMe).
+  \item A network interface (VirtIO-NET, e1000, rtl8139).
+  \item A serial port (16550A UART) for console access.
+\end{itemize}
+
+On bare metal, the same disk image boots via SeaBIOS or coreboot. The kernel
+configured with VirtIO drivers will also work with AHCI/SATA and Intel
+e1000/e1000e network controllers if those drivers are enabled.
+
+\subsection{Layer 2: Firmware}
+
+SeaBIOS (an open-source BIOS implementation shipped with QEMU) performs the
+Power-On Self Test (POST) when the virtual machine starts:
+
+\begin{enumerate}[nosep]
+  \item CPU initialization: switches from real mode to protected mode briefly
+        for memory sizing, then returns to real mode.
+  \item Memory controller initialization: detects and sizes system RAM.
+  \item PCI bus enumeration: discovers VirtIO devices, GPU (if present),
+        and other PCI peripherals.
+  \item Interrupt controller initialization: programs the PIC (8259A) and
+        APIC (if available).
+  \item Timer initialization: sets up the PIT (8254) and HPET.
+  \item DMA controller initialization: programs the 8237 DMA controller.
+  \item ACPI table generation: creates RSDT, DSDT, and other ACPI tables
+        describing the virtual hardware configuration.
+  \item Boot device scan: iterates through the boot order (set in QEMU's
+        -boot option or the VM's BIOS menu), reading the first sector
+        (LBA 0) of each device into memory at address 0x7C00.
+\end{enumerate}
+
+For each boot device, SeaBIOS reads the first 512 bytes into memory at
+address 0x7C00 using INT 13h function 42h (extended read). It then checks
+whether the last two bytes at 0x7DFE--0x7DFF are 0x55 0xAA (the MBR boot
+signature). If the signature is present, SeaBIOS sets the DL register to
+the boot drive number and transfers control by executing a far jump to
+0x7C00:0000.
+
+\subsection{Layer 3: Bootloader}
+
+GRUB (Grand Unified Bootloader) version 2.x runs in BIOS mode (i386-pc
+platform). It consists of three stages:
+
+\paragraph{Stage 1: boot.img}
+This 512-byte file is written to LBA 0 (the Master Boot Record) by the
+Veilbox GRUB installer. It contains:
+
+\begin{itemize}[nosep]
+  \item A short real-mode assembly program (~446 bytes) that sets up segment
+        registers, initializes the stack, and reads the blocklist from a
+        fixed offset in the file.
+  \item The partition table (64 bytes at offset 0x1BE--0x1FD) describing
+        the disk layout.
+  \item The boot signature (2 bytes at offset 0x1FE--0x1FF = 55 AA).
+\end{itemize}
+
+When SeaBIOS jumps to 0x7C00, boot.img executes and reads the blocklist
+(embedded in the core.img file at offset 0x1F4) to determine how many
+sectors to load and where to place them in memory.
+
+\paragraph{Stage 1.5: core.img}
+This file is written to the sectors immediately following the MBR (LBA 1
+onwards). It contains:
+
+\begin{itemize}[nosep]
+  \item diskboot.img: the first sector of core.img, which loads the rest of
+        core.img. It switches from real mode to protected mode, enables the
+        A20 gate (allowing access to memory above 1 MB), and sets up the
+        protected-mode environment for the GRUB kernel.
+  \item Filesystem drivers: ext2 (for reading the VEILBOX partition),
+        part\_msdos (for parsing the MBR partition table), and biosdisk
+        (for BIOS INT 13h disk access).
+  \item The GRUB kernel: a small embedded operating system that provides
+        command parsing, device management, and module loading.
+  \item An embedded configuration: added by the -c option to
+        grub2-mkimage, this tells GRUB to search for the VEILBOX partition
+        by filesystem label and set the prefix path.
+\end{itemize}
+
+\paragraph{Stage 2: /boot/grub/}
+GRUB modules and configuration files on the VEILBOX ext4 partition. The
+embedded config in core.img executes "search --label --set=root VEILBOX"
+to find the partition, then "set prefix=(\$root)/boot/grub" to locate the
+GRUB directory. GRUB reads grub.cfg, displays the boot menu, and loads
+the kernel.
+
+\subsection{Layer 4: Kernel}
+
+Linux kernel 7.1.0-rc6 compiled with custom configuration for virtualized
+environments. The kernel binary (vmlinuz) includes the embedded initramfs
+and is approximately 95 MB in size.
+
+Key configuration areas:
+\begin{itemize}[nosep]
+  \item VirtIO drivers for paravirtualized block and network I/O.
+  \item Full namespace and cgroup support for container isolation.
+  \item Seccomp and BPF for syscall filtering.
+  \item Serial console support for headless operation.
+  \item EFI stub for QEMU -kernel compatibility.
+  \item Striped-down driver set (no sound, USB, Wi-Fi, etc.).
+\end{itemize}
+
+\subsection{Layer 5: Init System}
+
+BusyBox init runs as PID 1, the first userspace process created by the
+kernel. It reads /etc/inittab and executes the configured actions:
+
+\begin{enumerate}[nosep]
+  \item sysinit: run /etc/init.d/rcS to mount filesystems and start services.
+  \item respawn: start getty (or autologin) on tty1 and ttyS0, restarting
+        them whenever they exit.
+  \item shutdown: unmount filesystems and deactivate swap when the system
+        is told to power off or reboot.
+\end{enumerate}
+
+\subsection{Layer 6: Boot Scripts}
+
+The /etc/init.d/rcS script is the single point of customization for system
+behavior. It performs:
+
+\begin{enumerate}[nosep]
+  \item Mount virtual filesystems: proc, sysfs, devtmpfs, devpts, tmpfs.
+  \item Set hostname from /etc/hostname.
+  \item Mount the persistent state partition with a multi-tier fallback
+        strategy: external VirtIO disk (vdb), external SATA disk (sdb),
+        VEILBOX partition /state directory, or memory-backed tmpfs.
+  \item Bring up network interfaces: loopback (lo) and eth0.
+  \item Start the DHCP client (udhcpc) in background.
+  \item Start the system logger (syslogd) in background.
+  \item Start containerd in background.
+  \item Start Dropbear SSH server in foreground.
+\end{enumerate}
+
+\subsection{Layer 7: Services}
+
+Four services run in the background after rcS completes:
+
+\begin{itemize}[nosep]
+  \item \textbf{udhcpc}: BusyBox DHCP client. Negotiates an IP address from
+        the QEMU SLiRP virtual DHCP server. The script at
+        /usr/share/udhcpc/default.script configures the interface on
+        bound/renew events.
+  \item \textbf{syslogd}: BusyBox system logger. Captures kernel log messages
+        (via /proc/kmsg) and process messages (via /dev/log) to
+        /var/log/messages.
+  \item \textbf{containerd}: Container runtime daemon. Exposes a gRPC API at
+        /run/containerd/containerd.sock for container lifecycle management.
+  \item \textbf{Dropbear}: Lightweight SSH server. Listens on port 22 for
+        incoming connections. Supports key-based and password authentication.
+\end{itemize}
+
+\subsection{Layer 8: User Interface}
+
+The login prompt is presented on two consoles:
+\begin{itemize}[nosep]
+  \item \textbf{tty1}: VGA text console (available when QEMU is run with a
+        graphical window or when booting on bare metal with a monitor).
+  \item \textbf{ttyS0}: Serial console (available via QEMU's -nographic
+        mode or a physical serial port).
+\end{itemize}
+
+The autologin wrapper (/sbin/autologin) checks /proc/cmdline for the
+veilbox.autologin parameter. If present, it runs "login -f root" to
+automatically log in as root. Otherwise, it runs getty to present the
+standard login prompt.
+
+\section{The Build Pipeline}
+
+The operating system is assembled by build.sh in a linear pipeline of
+14 stages. Each stage is independent and can be run separately for
+debugging or incremental development.
+
+\begin{enumerate}[nosep]
+  \item \textbf{Install dependencies}: Check for required packages, install
+        via sudo dnf if on Fedora.
+  \item \textbf{Create rootfs directories}: Set up the Linux filesystem
+        hierarchy (bin, sbin, etc, usr, lib, etc.).
+  \item \textbf{Write configuration files}: Create inittab, rcS, passwd,
+        shadow, containerd config, DHCP script, profile.
+  \item \textbf{Configure kernel}: Run make defconfig, merge custom fragment,
+        resolve dependencies with olddefconfig.
+  \item \textbf{Strip unnecessary drivers}: Disable sound, USB, Wi-Fi,
+        Bluetooth, media, ATA, SCSI, and other VM-unneeded subsystems.
+  \item \textbf{Populate rootfs binaries}: Download and install BusyBox,
+        containerd, runc, nerdctl, and Dropbear.
+  \item \textbf{Generate SSH keys}: Create Ed25519 key pair for root access.
+  \item \textbf{Copy shared libraries}: Find dynamically linked binaries and
+        copy their library dependencies to /lib64.
+  \item \textbf{Generate initramfs}: Create the kernel file list from the
+        rootfs directory, add device nodes, and set as initramfs source.
+  \item \textbf{Build kernel}: Compile the kernel with make -j\$(nproc)
+        and copy the resulting bzImage to the output directory.
+  \item \textbf{Create SquashFS reference}: Compress the rootfs for
+        inspection (optional, not used at boot time).
+  \item \textbf{Create state image}: Make a 128 MB ext4 filesystem for
+        legacy persistent storage.
+  \item \textbf{Create bootable disk}: Build the 8 GB MBR-partitioned disk
+        image with ext4 filesystem, kernel, GRUB config, and rootless
+        GRUB installation.
+  \item \textbf{Convert to VDI}: Use qemu-img to create a VirtualBox-
+        compatible sparse disk image.
+\end{enumerate}
+
+\section{Design Trade-offs}
+
+\subsection{Embedded Initramfs vs. Separate Initrd}
+
+The decision to embed the initramfs inside the kernel binary (rather than
+keeping it as a separate file on the boot partition) has far-reaching
+consequences for the system architecture.
+
+\textbf{Advantages:}
+\begin{itemize}[nosep]
+  \item Single-file deployment: copy one file (vmlinuz) to the boot
+        partition and the system is ready.
+  \item Atomic kernel+rootfs: the kernel and its root filesystem are always
+        in sync. There is no risk of a kernel update that is incompatible
+        with an older initramfs.
+  \item Bootloader simplicity: the bootloader loads one file (vmlinuz)
+        instead of two (kernel + initrd). The GRUB configuration is simply
+        "linux /boot/vmlinuz console=ttyS0".
+  \item QEMU compatibility: the -kernel option loads the kernel and
+        automatically detects the embedded initramfs, eliminating the
+        need for -initrd.
+\end{itemize}
+
+\textbf{Disadvantages:}
+\begin{itemize}[nosep]
+  \item Larger kernel binary: ~95 MB vs. ~10 MB for a bare kernel. This
+        increases boot time (decompression of the initramfs) and storage
+        requirements.
+  \item Longer build time: every change to the rootfs requires a kernel
+        rebuild. The make process re-embeds the initramfs each time.
+  \item No runtime rootfs changes: the root filesystem cannot be modified
+        without rebuilding the kernel.
+\end{itemize}
+
+\subsection{BusyBox vs. Full Userspace}
+
+BusyBox provides over 300 Unix utilities in a single 1 MB binary. A full
+GNU userspace with coreutils, util-linux, procps-ng, bash, and other
+standard packages would be 200+ MB.
+
+\textbf{Advantages:}
+\begin{itemize}[nosep]
+  \item Dramatically smaller disk and memory footprint.
+  \item Simpler dependency management (one binary, one set of libraries).
+  \item Faster boot (fewer binaries to load).
+  \item Smaller attack surface (fewer lines of code).
+\end{itemize}
+
+\textbf{Disadvantages:}
+\begin{itemize}[nosep]
+  \item Limited tool selection: many GNU extensions are not available.
+  \item Reduced functionality: ps has fewer options, grep is slower on
+        large files, awk is not included (use the smaller BusyBox awk).
+  \item Different error messages and behavior: scripts written for GNU
+        tools may need adjustment.
+\end{itemize}
+
+\subsection{BIOS vs. UEFI Boot}
+
+Veilbox uses GRUB in BIOS/CSM mode (i386-pc) rather than UEFI (x86\_64-efi).
+
+\textbf{Advantages:}
+\begin{itemize}[nosep]
+  \item Maximum compatibility with older firmware and hypervisors.
+  \item Simpler installer (boot.img + core.img at known LBA positions).
+  \item Works with QEMU's default SeaBIOS without UEFI firmware.
+\end{itemize}
+
+\textbf{Disadvantages:}
+\begin{itemize}[nosep]
+  \item No Secure Boot support.
+  \item Limited to 2 TB boot disks (MBR limitation).
+  \item Slower boot (real-mode transitions).
+\end{itemize}

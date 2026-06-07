@@ -1,0 +1,268 @@
+\chapter{Kernel Configuration}
+\label{ch:kernelconfig}
+
+The Linux kernel offers over 15,000 configuration options across dozens
+of subsystems. Veilbox uses a carefully curated subset of approximately
+111 options (plus the defconfig baseline) that provides exactly the
+features needed for a virtualized container host.
+
+\section{Configuration Strategy}
+
+\subsection{Layered Configuration Model}
+
+Veilbox uses a three-layer configuration model:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Base layer}: \texttt{make defconfig} generates a
+        configuration with approximately 10,000 options enabled. This
+        provides a working baseline for x86\_64 hardware.
+  \item \textbf{Veilbox layer}: The custom fragment
+        (\texttt{custom-os.config}) adds or removes approximately 111
+        options. This layer enables container-related features (namespaces,
+        cgroups, overlay filesystem) and disables unnecessary hardware
+        support.
+  \item \textbf{Hardware layer}: Runtime-detected. The kernel uses
+        module autoloading and udev (via devtmpfs) to load drivers for
+        detected hardware. Since Veilbox uses an embedded initramfs with
+        no module loading, all needed drivers must be compiled in (\texttt{y}).
+\end{enumerate}
+
+\subsection{Decision Rules}
+
+Each configuration option in the Veilbox fragment follows these rules:
+
+\begin{itemize}[nosep]
+  \item \textbf{Essential features} (\texttt{y}): Options needed for system
+        boot, container operation, or debugging are set to \texttt{y}
+        (built-in).
+  \item \textbf{Unnecessary features} (\texttt{n}): Hardware drivers for
+        subsystems not present in a VM (sound, USB, Wi-Fi, Bluetooth,
+        etc.) are explicitly disabled.
+  \item \textbf{Modules} (\texttt{m}): Not used. Veilbox has no module
+        loading infrastructure (no depmod, modprobe, or module directory).
+        All drivers are built into the kernel.
+\end{itemize}
+
+\section{Critical Configuration Options}
+
+\subsection{Container Runtime Support}
+
+\begin{lstlisting}
+CONFIG_NAMESPACES=y
+CONFIG_UTS_NS=y
+CONFIG_IPC_NS=y
+CONFIG_PID_NS=y
+CONFIG_NET_NS=y
+CONFIG_USER_NS=y
+CONFIG_CGROUPS=y
+CONFIG_CGROUP_CPUACCT=y
+CONFIG_CGROUP_DEVICE=y
+CONFIG_CGROUP_FREEZER=y
+CONFIG_CGROUP_SCHED=y
+CONFIG_CPUSETS=y
+CONFIG_MEMCG=y
+\end{lstlisting}
+
+These options enable Linux namespace isolation and cgroup resource
+management. Namespaces provide process isolation (each container sees
+its own PID tree, network stack, mount table, etc.). Cgroups provide
+resource limits (CPU, memory, device access).
+
+\subsection{Overlay Filesystem}
+
+\begin{lstlisting}
+CONFIG_OVERLAY_FS=y
+\end{lstlisting}
+
+The OverlayFS filesystem enables container image layering. Each container
+image is composed of read-only layers with a thin writable layer on top.
+This is the foundation of Docker/containerd image management.
+
+\subsection{Networking}
+
+\begin{lstlisting}
+CONFIG_VETH=y
+CONFIG_BRIDGE=y
+CONFIG_NETFILTER=y
+CONFIG_NETFILTER_XTABLES=y
+CONFIG_IP_NF_FILTER=y
+CONFIG_IP_NF_NAT=y
+CONFIG_IP_NF_TARGET_MASQUERADE=y
+CONFIG_VIRTIO_NET=y
+\end{lstlisting}
+
+Virtual Ethernet (veth) pairs connect container network namespaces to the
+host bridge. Netfilter enables NAT and packet filtering for container
+outbound traffic. The VirtIO net driver provides high-performance
+paravirtualized networking in QEMU.
+
+\subsection{Storage}
+
+\begin{lstlisting}
+CONFIG_VIRTIO_BLK=y
+CONFIG_EXT4_FS=y
+CONFIG_TMPFS=y
+CONFIG_SQUASHFS=y
+CONFIG_DEVTMPFS=y
+\end{lstlisting}
+
+VirtIO block provides paravirtualized storage in QEMU. ext4 is the primary
+filesystem for the VEILBOX partition. tmpfs is used by the kernel for
+the initramfs root. devtmpfs provides automatic device node creation.
+
+\subsection{Serial Console}
+
+\begin{lstlisting}
+CONFIG_TTY=y
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y
+CONFIG_SERIAL_CORE=y
+CONFIG_SERIAL_CORE_CONSOLE=y
+\end{lstlisting}
+
+The serial console (ttyS0) is the primary management interface for headless
+operation. The 8250 UART driver is the standard serial port controller in
+x86\_64 systems.
+
+\subsection{Mandatory for Boot}
+
+\begin{lstlisting}
+CONFIG_EFI_STUB=y
+CONFIG_CMDLINE_BOOL=y
+CONFIG_CMDLINE="console=ttyS0 console=tty1"
+CONFIG_INITRAMFS_SOURCE="initramfs.list"
+CONFIG_BLK_DEV_INITRD=y
+\end{lstlisting}
+
+\texttt{CONFIG\_EFI\_STUB} is required for QEMU's \texttt{-kernel} boot
+mode — it produces a valid MZ/PE header that QEMU's firmware recognizes.
+The kernel command line specifies both serial and VGA consoles.
+
+\section{Configuration File Format}
+
+The kernel configuration file (.config) uses a simple key-value format:
+
+\begin{lstlisting}
+# CONFIG_SOUND is not set
+CONFIG_NAMESPACES=y
+CONFIG_CGROUPS=y
+CONFIG_EXT4_FS=m
+\end{lstlisting}
+
+The three value types are:
+\begin{itemize}[nosep]
+  \item \texttt{y}: Built into the kernel binary. Required for drivers
+        that are needed at boot time (storage, console, initramfs).
+  \item \texttt{m}: Built as a loadable kernel module. Not used in
+        Veilbox.
+  \item \texttt{n}: Disabled. The option and its code are excluded from
+        the build entirely.
+\end{itemize}
+
+\section{Defconfig Reference}
+
+The \texttt{make defconfig} target generates a configuration file that
+enables the majority of options suitable for the target architecture.
+On x86\_64, this includes:
+
+\begin{itemize}[nosep]
+  \item All x86\_64 CPU features: MMX, SSE, AVX, NX, PGE, MTRR, PAT,
+        and so on.
+  \item All major filesystems (ext4, XFS, btrfs, FAT, NTFS, etc.)
+  \item Network protocol support (TCP, UDP, SCTP, DCCP, etc.)
+  \item All common device drivers (storage, network, input, video, etc.)
+  \item Security features (LSM, SELinux, AppArmor, IMA, EVM, etc.)
+\end{itemize}
+
+The Veilbox fragment reduces this to only the features needed for a
+container host running in a virtual machine.
+
+\section{Validating Configuration}
+
+After applying the fragment and resolving dependencies, the configuration
+should be validated:
+
+\begin{lstlisting}[language=bash]
+# Check for unresolved dependencies
+make olddefconfig
+
+# Check specifically for container support
+grep -E "(NAMESPACES|CGROUPS|OVERLAY_FS)" .config
+
+# Check for VirtIO drivers
+grep -E "(VIRTIO_NET|VIRTIO_BLK)" .config
+
+# Verify initramfs source path
+grep CONFIG_INITRAMFS_SOURCE .config
+\end{lstlisting}
+
+
+\section{Detailed Option Reference}
+
+\subsection{Namespace Configuration}
+
+Linux namespaces are the foundation of container isolation. Each namespace
+type isolates a different global resource:
+
+\begin{longtable}{|p{3cm}|p{4cm}|p{5cm}|}
+\hline
+\textbf{Namespace} & \textbf{Isolates} & \textbf{Kernel Option} \\
+\hline
+Mount (mnt) & Filesystem mount points & CONFIG\_UTS\_NS \\
+PID (pid) & Process IDs & CONFIG\_PID\_NS \\
+Network (net) & Network stack & CONFIG\_NET\_NS \\
+IPC (ipc) & System V IPC, POSIX messages & CONFIG\_IPC\_NS \\
+UTS (uts) & Hostname, domain name & CONFIG\_UTS\_NS \\
+User (user) & UID/GID mappings & CONFIG\_USER\_NS \\
+Cgroup (cgroup) & Cgroup root directory & CONFIG\_CGROUPS \\
+Time (time) & Clock sources & CONFIG\_TIME\_NS \\
+\hline
+\end{longtable}
+
+\subsection{Control Group Controllers}
+
+Cgroups limit and account for resource usage. Each controller regulates
+a specific resource:
+
+\begin{longtable}{|p{3cm}|p{4cm}|p{5cm}|}
+\hline
+\textbf{Controller} & \textbf{Resource} & \textbf{Kernel Option} \\
+\hline
+cpu & CPU scheduling & CONFIG\_CGROUP\_SCHED \\
+cpuacct & CPU accounting & CONFIG\_CGROUP\_CPUACCT \\
+cpuset & CPU/memory pinning & CONFIG\_CPUSETS \\
+memory & Memory limits & CONFIG\_MEMCG \\
+blkio & Block I/O limits & CONFIG\_BLK\_CGROUP \\
+devices & Device access & CONFIG\_CGROUP\_DEVICE \\
+freezer & Process freeze/thaw & CONFIG\_CGROUP\_FREEZER \\
+pids & PID limits & CONFIG\_CGROUP\_PIDS \\
+\hline
+\end{longtable}
+
+\subsection{Netfilter and NAT}
+
+For container networking, Netfilter provides:
+
+\begin{itemize}[nosep]
+  \item \textbf{Packet filtering}: Accept, drop, or reject packets based
+        on source/destination IP, port, protocol, and interface.
+  \item \textbf{NAT (Network Address Translation)}: Masquerade container
+        outbound traffic behind the host IP address.
+  \item \textbf{Connection tracking}: Track TCP/UDP connection state for
+        stateful filtering and NAT.
+  \item \textbf{Forwarding}: Enable IP forwarding between the host
+        network namespace and container namespaces.
+\end{itemize}
+
+The minimum Netfilter options for container networking:
+
+\begin{lstlisting}
+CONFIG_NETFILTER=y
+CONFIG_NETFILTER_ADVANCED=y
+CONFIG_NETFILTER_XTABLES=y
+CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y
+CONFIG_NETFILTER_XT_MATCH_CONNTRACK=y
+CONFIG_IP_NF_FILTER=y
+CONFIG_IP_NF_NAT=y
+CONFIG_IP_NF_TARGET_MASQUERADE=y
+\end{lstlisting}

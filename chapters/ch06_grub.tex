@@ -1,0 +1,273 @@
+\chapter{GRUB Bootloader}
+\label{ch:grub}
+
+GRUB (Grand Unified Bootloader) version 2.x in BIOS mode (i386-pc) is
+responsible for loading the Veilbox kernel from the VEILBOX ext4 partition.
+This chapter explains the GRUB boot process, the blocklist format, and
+the rootless installation procedure.
+
+\section{GRUB Architecture}
+
+GRUB 2.x for BIOS systems consists of three distinct stages:
+
+\subsection{Stage 1: boot.img}
+
+\texttt{boot.img} is a 512-byte file written to LBA 0 (the Master Boot
+Record of the disk). It contains:
+
+\begin{itemize}[nosep]
+  \item A 446-byte real-mode assembly stub that sets up segment registers,
+        initializes the stack pointer, and reads the blocklist from a fixed
+        offset within the core.img file.
+  \item The 64-byte MBR partition table at offset 0x1BE–0x1FD.
+  \item The 2-byte boot signature (0x55 0xAA) at offset 0x1FE–0x1FF.
+\end{itemize}
+
+When the BIOS (SeaBIOS) jumps to address 0x7C00, \texttt{boot.img}
+executes. It reads the blocklist pointer embedded in \texttt{core.img}
+to determine how many sectors to load and where.
+
+\subsection{Stage 1.5: core.img}
+
+\texttt{core.img} is written to the sectors immediately following the MBR
+(starting at LBA 1). Its structure is:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.5cm]
+\node[box, text width=6cm] (diskboot) {diskboot.img (LBA 1, 1 sector)};
+\node[box, text width=6cm, below of=diskboot] (kernel2) {GRUB kernel \& filesystem drivers};
+\node[box, text width=6cm, below of=kernel2] (cfg) {Embedded config string};
+\draw[arrow] (diskboot) -- node[right] {Loads} (kernel2);
+\draw[arrow] (kernel2) -- node[right] {Executes} (cfg);
+\end{tikzpicture}
+\caption{Structure of core.img on disk. diskboot.img loads the GRUB
+kernel and its filesystem drivers, which then parse the embedded config.}
+\label{fig:coreimg}
+\end{figure}
+
+The first sector (\texttt{diskboot.img}) is loaded by \texttt{boot.img}.
+It switches the CPU from real mode to protected mode, enables the A20
+gate (allowing access to memory above 1 MB), and loads the rest of
+\texttt{core.img}.
+
+The GRUB kernel embedded in core.img provides:
+\begin{itemize}[nosep]
+  \item Command-line parsing (the GRUB shell)
+  - Device management (disk detection, partition parsing)
+  - Filesystem drivers (ext2, part\_msdos, biosdisk)
+  - Module loading infrastructure
+\end{itemize}
+
+The embedded configuration (added by \texttt{grub2-mkimage -c}) tells
+GRUB to find the VEILBOX partition and set the root prefix:
+
+\begin{lstlisting}
+search --label --set=root VEILBOX
+set prefix=($root)/boot/grub
+\end{lstlisting}
+
+\subsection{Stage 2: /boot/grub/}
+
+Once core.img finds the VEILBOX partition and loads the ext2 filesystem
+driver, it reads \texttt{/boot/grub/grub.cfg}. The default Veilbox
+configuration:
+
+\begin{lstlisting}
+set default=0
+set timeout=5
+
+menuentry "Veilbox" {
+    linux /boot/vmlinuz console=ttyS0 console=tty1
+}
+\end{lstlisting}
+
+\section{The Blocklist Format}
+
+core.img contains a blocklist at offset 0x1F4 that tells diskboot.img
+how many sectors to load. The format is:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{Offset} & \textbf{Size} & \textbf{Field} & \textbf{Description} \\
+\hline
+0x1F4 & 4 bytes & start & First LBA sector number \\
+0x1F8 & 4 bytes & start\_hi & Must be 0 (high bits) \\
+0x1FC & 2 bytes & remaining & Number of sectors to load \\
+0x1FE & 2 bytes & seg & Real-mode segment address \\
+\hline
+\end{tabular}
+\caption{core.img blocklist format at offset 0x1F4. Total: 12 bytes.}
+\label{tab:blocklist}
+\end{table}
+
+\section{Rootless GRUB Installation}
+
+Installing GRUB traditionally requires loop-mounting the disk image and
+running \texttt{grub2-install}, both of which need root privileges.
+Veilbox uses a Python script that writes directly to the raw disk image
+file.
+
+\subsection{Installation Procedure}
+
+\begin{enumerate}[nosep]
+  \item Extract the partition table from the disk image using sfdisk.
+  \item Write the 512-byte \texttt{boot.img} to LBA 0.
+  \item Restore the saved partition table to bytes 0x1BE–0x1FD.
+  \item Generate a fresh \texttt{core.img} using \texttt{grub2-mkimage}
+        with the embedded config.
+  \item Write \texttt{core.img} starting at LBA 1.
+  \item Copy GRUB modules (\texttt{*.mod}) and configuration file to
+        \texttt{/boot/grub/} on the VEILBOX partition using debugfs.
+\end{enumerate}
+
+\subsection{Why Not Patch the Blocklist}
+
+Earlier versions of the installer attempted to patch the blocklist in
+core.img to reflect the actual size of the core image. This approach
+failed because:
+
+\begin{itemize}[nosep]
+  \item The blocklist is 12 bytes, not 16 as previously assumed.
+        Patching byte 8 (intended as the \texttt{seg} field) actually
+        overwrites \texttt{start\_hi} with the sector count, corrupting
+        the blocklist.
+  \item \texttt{grub2-mkimage} already generates a correct blocklist
+        with \texttt{start=2}, \texttt{start\_hi=0},
+        \texttt{remaining=N}, and \texttt{seg=0x0820}.
+  \item Any modification invalidates the GRUB geometry check at
+        \texttt{diskboot.img:0x63}, causing a ``geometry error'' triple
+        fault.
+\end{itemize}
+
+\subsection{The Python Installer}
+
+\begin{lstlisting}[language=python]
+def install_grub(disk, core_img, boot_img):
+    with open(disk, 'r+b') as f:
+        # Save partition table (bytes 0x1BE-0x1FD)
+        f.seek(0x1BE)
+        pt = f.read(64)
+
+        # Write boot.img to LBA 0
+        f.seek(0)
+        f.write(boot_img)
+
+        # Restore partition table
+        f.seek(0x1BE)
+        f.write(pt)
+
+        # Write core.img starting at LBA 1
+        f.seek(512)
+        f.write(core_img)
+\end{lstlisting}
+
+\section{GRUB Interactive Shell}
+
+GRUB provides an interactive shell for troubleshooting and manual booting.
+Access it by pressing `c` at the GRUB menu:
+
+\begin{lstlisting}
+grub> ls
+(hd0) (hd0,msdos1)
+
+grub> ls (hd0,msdos1)/
+boot/
+
+grub> ls (hd0,msdos1)/boot/
+vmlinuz grub/
+
+grub> set root=(hd0,msdos1)
+grub> linux /boot/vmlinuz console=ttyS0
+grub> boot
+\end{lstlisting}
+
+\subsection{Useful GRUB Commands}
+
+\begin{longtable}{|p{3cm}|p{10cm}|}
+\hline
+\textbf{Command} & \textbf{Purpose} \\
+\hline
+\texttt{ls} & List devices and partitions. \\
+\texttt{ls \textless device\textgreater/} & List files on a partition. \\
+\texttt{set} & Display all variables. \\
+\texttt{set root=...} & Set root partition. \\
+\texttt{linux} & Load a Linux kernel. \\
+\texttt{initrd} & Load an initrd (not needed with embedded initramfs). \\
+\texttt{boot} & Boot the loaded kernel. \\
+\texttt{reboot} & Reboot the system. \\
+\texttt{configfile} & Load a configuration file. \\
+\texttt{search} & Search for a partition by label or UUID. \\
+\texttt{insmod} & Load a GRUB module. \\
+\texttt{cat} & Display file contents. \\
+\hline
+\end{longtable}
+
+\section{GRUB Configuration Advanced Topics}
+
+\subsection{Multiple Boot Entries}
+
+The grub.cfg can define multiple boot options:
+
+\begin{lstlisting}
+set default=0
+set timeout=5
+
+menuentry "Veilbox (Standard)" {
+    linux /boot/vmlinuz console=ttyS0 console=tty1
+}
+
+menuentry "Veilbox (Debug)" {
+    linux /boot/vmlinuz console=ttyS0 console=tty1 \
+        debug ignore_loglevel earlyprintk=serial
+}
+
+menuentry "Veilbox (Single User)" {
+    linux /boot/vmlinuz console=ttyS0 console=tty1 single
+}
+
+menuentry "Reboot" {
+    reboot
+}
+\end{lstlisting}
+
+\subsection{Serial Console in GRUB}
+
+GRUB can output to the serial console, which is useful for headless systems:
+
+\begin{lstlisting}
+serial --unit=0 --speed=38400 --word=8 --parity=no --stop=1
+terminal_input serial console
+terminal_output serial console
+
+menuentry "Veilbox" {
+    linux /boot/vmlinuz console=ttyS0 console=tty1
+}
+\end{lstlisting}
+
+\section{GRUB Module Reference}
+
+The modules listed during \texttt{grub2-mkimage} control what features
+GRUB has access to:
+
+\begin{longtable}{|p{4cm}|p{8cm}|}
+\hline
+\textbf{Module} & \textbf{Purpose} \\
+\hline
+ext2 & Read ext2/3/4 filesystems (needed for VEILBOX partition). \\
+part\_msdos & Parse MBR partition tables. \\
+biosdisk & Access disks via BIOS INT 13h. \\
+search & Search for partitions by label, UUID, or file. \\
+configfile & Read GRUB configuration files. \\
+serial & Serial console I/O. \\
+terminal & Terminal management (serial + VGA). \\
+ls & List devices and directories. \\
+cat & Display file contents. \\
+linux & Load Linux kernel. \\
+boot & Execute loaded kernel. \\
+reboot & Reboot the system. \\
+halt & Halt the system. \\
+\hline
+\end{longtable}

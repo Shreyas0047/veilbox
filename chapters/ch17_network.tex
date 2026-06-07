@@ -1,0 +1,263 @@
+\chapter{Network Stack}
+\label{ch:network}
+
+Veilbox uses a minimal but functional network stack built on BusyBox
+networking utilities and the Linux kernel's networking subsystem. This
+chapter covers the network configuration, DHCP, routing, and integration
+with container networking.
+
+\section{Network Architecture}
+
+The Veilbox network stack has four layers:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Physical/virtual device}: VirtIO-NET (virtio\_net driver)
+        provides the network interface to QEMU's virtual switch.
+  \item \textbf{Link layer}: The kernel's networking core manages the
+        Ethernet device (\texttt{eth0}) via the VirtIO-NET driver.
+  \item \textbf{Network layer}: IPv4 protocol stack with ARP, ICMP, and
+        routing.
+  \item \textbf{Application layer}: udhcpc (DHCP client) and user
+        applications (wget, nerdctl image pulls, ssh, etc.).
+\end{enumerate}
+
+\section{Interface Configuration}
+
+\subsection{Loopback Interface}
+
+The loopback interface provides local communication:
+
+\begin{lstlisting}[language=bash]
+ifconfig lo 127.0.0.1 up
+\end{lstlisting}
+
+\subsection{Ethernet Interface}
+
+The primary Ethernet interface (\texttt{eth0}) acquires an IP address
+via DHCP:
+
+\begin{lstlisting}[language=bash]
+ifconfig eth0 0.0.0.0 up
+udhcpc -i eth0 -b
+\end{lstlisting}
+
+\section{DHCP Client (udhcpc)}
+
+The BusyBox DHCP client is a minimal implementation of the DHCP protocol:
+
+\subsection{Protocol Flow}
+
+\begin{enumerate}[nosep]
+  \item \textbf{DHCPDISCOVER}: Client broadcasts a discovery packet to
+        255.255.255.255 (UDP port 67).
+  \item \textbf{DHCPOFFER}: Server responds with an offered IP address,
+        lease time, subnet mask, gateway, and DNS servers.
+  \item \textbf{DHCPREQUEST}: Client requests the offered address.
+  \item \textbf{DHCPACK}: Server acknowledges the lease.
+  \item \textbf{Bound}: Client configures the interface using the
+        supplied parameters.
+\end{enumerate}
+
+\subsection{Lease Renewal}
+
+At 50\% of lease time, the client attempts to renew. On success, the
+renew script is called. On failure, the client tries again at 87.5\%.
+
+\section{Routing}
+
+Default route configuration:
+
+\begin{lstlisting}[language=bash]
+route add default gw 10.0.2.2
+\end{lstlisting}
+
+In QEMU SLiRP networking, the gateway is always 10.0.2.2. DNS is
+at 10.0.2.3. The guest IP is 10.0.2.15/24.
+
+\section{Container Networking}
+
+\subsection{veth Pairs}
+
+When nerdctl creates a container with network access, it creates a veth
+pair — two virtual Ethernet interfaces connected by a virtual cable:
+
+\begin{lstlisting}
+# Host side: vethXXXXX in root namespace
+# Container side: eth0 in container namespace
+\end{lstlisting}
+
+\subsection{Network Namespace Isolation}
+
+Each container receives its own network namespace:
+
+\begin{itemize}[nosep]
+  \item \textbf{Default}: A veth pair connects the container to the host's
+        network. The container shares the host's IP stack (NAT).
+  \item \textbf{Host mode} (\texttt{--net=host}): The container uses the
+        host's network namespace directly, sharing the same IP address.
+  \item \textbf{None} (\texttt{--net=none}): The container has only a
+        loopback interface, completely isolated.
+\end{itemize}
+
+
+\section{Network Interface Naming}
+
+Veilbox uses the traditional kernel naming scheme (\texttt{eth0}) rather
+than the predictable naming scheme (\texttt{enp0s3}) used by modern
+distributions. This is configured via the kernel command line:
+
+\begin{lstlisting}
+net.ifnames=0
+\end{lstlisting}
+
+\section{TCP/IP Stack Tuning}
+
+The Veilbox kernel includes the following TCP/IP features:
+
+\begin{lstlisting}
+CONFIG_TCP_CONG_CUBIC=y    # Default congestion control
+CONFIG_TCP_CONG_BBR=y      # BBR congestion control (optional)
+CONFIG_IP_MULTICAST=y      # Multicast support
+CONFIG_IP_PNP=y            # IP autoconfiguration (DHCP)
+CONFIG_SYN_COOKIES=y       # SYN flood protection
+\end{lstlisting}
+
+\subsection{Network Performance Tuning}
+
+Parameters in /proc/sys/net/ for tuning:
+
+\begin{lstlisting}
+# Increase TCP buffer sizes
+echo 2097152 > /proc/sys/net/core/rmem_max
+echo 2097152 > /proc/sys/net/core/wmem_max
+
+# Enable TCP window scaling
+echo 1 > /proc/sys/net/ipv4/tcp_window_scaling
+
+# Reduce TIME_WAIT sockets
+echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse
+
+# Increase backlog queue
+echo 1024 > /proc/sys/net/core/somaxconn
+\end{lstlisting}
+
+\section{Stateless Address Autoconfiguration}
+
+In addition to DHCP, the kernel supports IPv6 SLAAC (Stateless Address
+Autoconfiguration). While Veilbox primarily uses IPv4, the IPv6 stack
+is available:
+
+\begin{lstlisting}
+CONFIG_IPV6=y
+CONFIG_IPV6_ROUTER_PREF=y
+CONFIG_IPV6_OPTIMISTIC_DAD=y
+\end{lstlisting}
+
+\section{Conntrack and NAT}
+
+Connection tracking is essential for container NAT:
+
+\begin{lstlisting}
+# View connection tracking table
+cat /proc/net/nf_conntrack
+
+# Maximum tracked connections
+echo 65536 > /proc/sys/net/netfilter/nf_conntrack_max
+
+# Connection timeout (seconds)
+echo 600 > /proc/sys/net/netfilter/nf_conntrack_tcp_timeout_established
+\end{lstlisting}
+
+\section{DNS Resolution}
+
+DNS is configured via /etc/resolv.conf, written by the DHCP script:
+
+\begin{lstlisting}
+# /etc/resolv.conf
+nameserver 10.0.2.3
+\end{lstlisting}
+
+In QEMU SLiRP networking, the DNS server is always at 10.0.2.3, which
+forwards queries to the host's DNS resolver.
+
+\section{Advanced DHCP Configuration}
+
+\subsection{Static IP Configuration}
+
+If DHCP is not available, configure a static IP:
+
+\begin{lstlisting}
+# Static IP configuration
+ifconfig eth0 192.168.1.100 netmask 255.255.255.0 up
+route add default gw 192.168.1.1
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
+echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+\end{lstlisting}
+
+\subsection{DHCP with Custom Script}
+
+The udhcpc default script can be customized:
+
+\begin{lstlisting}[language=bash]
+#!/bin/sh
+# Custom DHCP script /usr/share/udhcpc/default.script
+RESOLV_CONF="/etc/resolv.conf"
+
+case "$1" in
+    bound|renew)
+        ifconfig $interface $ip netmask $subnet
+        route add default gw $router 2>/dev/null
+
+        # Write DNS servers
+        > $RESOLV_CONF
+        for ns in $dns; do
+            echo "nameserver $ns" >> $RESOLV_CONF
+        done
+
+        # Set hostname if provided
+        [ -n "$hostname" ] && hostname "$hostname"
+
+        # Log the event
+        echo "DHCP: $interface -> $ip via $router" \
+            >> /var/log/messages
+        ;;
+    deconfig)
+        ifconfig $interface 0.0.0.0
+        ;;
+    leasefail)
+        echo "DHCP: lease failed for $interface" \
+            >> /var/log/messages
+        ;;
+esac
+\end{lstlisting}
+
+\section{Network Troubleshooting Tools}
+
+\subsection{Ping and Connectivity}
+
+\begin{lstlisting}
+# Test basic connectivity
+ping -c 3 10.0.2.2      # Gateway (QEMU SLiRP)
+ping -c 3 10.0.2.3      # DNS server
+ping -c 3 8.8.8.8       # Internet (if NAT works)
+
+# Test DNS resolution
+ping -c 3 google.com
+\end{lstlisting}
+
+\subsection{Traceroute}
+
+BusyBox traceroute shows the network path:
+
+\begin{lstlisting}
+traceroute 8.8.8.8
+\end{lstlisting}
+
+\subsection{Tcpdump}
+
+For packet-level analysis, tcpdump can be installed in a container:
+
+\begin{lstlisting}
+nerdctl run --rm --net=host alpine sh -c \
+    "apk add tcpdump && tcpdump -i eth0"
+\end{lstlisting}

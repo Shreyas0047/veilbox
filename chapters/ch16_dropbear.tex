@@ -1,0 +1,199 @@
+\chapter{Dropbear SSH}
+\label{ch:dropbear}
+
+Dropbear is a lightweight SSH server designed for embedded systems and
+environments with limited resources. It provides encrypted remote access
+to the Veilbox shell, supporting both password and public key
+authentication.
+
+\section{Dropbear Overview}
+
+Dropbear was created by Matt Johnston in 2002 as a minimal SSH server
+for embedded Linux systems. Key characteristics:
+
+\begin{itemize}[nosep]
+  \item \textbf{Size}: Approximately 140 KB for the server binary
+        (vs. OpenSSH's 1.2 MB).
+  - \textbf{Protocol}: SSH protocol version 2 only (no legacy v1 support).
+  - \textbf{Ciphers}: AES-128/256-CTR, AES-128/256-GCM, ChaCha20-Poly1305,
+        3DES (optional).
+  - \textbf{Key exchange}: Curve25519, ECDH (NIST P-256/384/521),
+        DH group14-sha256, DH group1-sha1.
+  - \textbf{Host key types}: ED25519, RSA (2048/4096), ECDSA (P-256/384/521).
+  - \textbf{Authentication}: Password, public key (single
+        \texttt{authorized\_keys} file), no PAM or Kerberos support.
+\end{itemize}
+
+\section{Building Dropbear}
+
+Veilbox builds Dropbear from source with minimal dependencies:
+
+\begin{lstlisting}[language=bash]
+# Download
+curl -LO https://matt.ucc.asn.au/dropbear/releases/\
+dropbear-2024.85.tar.bz2
+
+# Extract and configure
+tar xf dropbear-2024.85.tar.bz2
+cd dropbear-2024.85
+./configure --disable-zlib
+
+# Build (statically linked)
+make -j$(nproc) PROGRAMS="dropbear dropbearkey dropbearconvert"
+
+# Install
+make install DESTDIR=../rootfs
+\end{lstlisting}
+
+The \texttt{--disable-zlib} flag removes zlib compression support,
+reducing the binary size at the cost of higher network bandwidth.
+
+\section{Running Dropbear}
+
+\begin{lstlisting}[language=bash]
+# Generate host keys (if not present)
+dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key
+dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key
+
+# Start in foreground
+dropbear -F -R -p 22
+
+# Start in background
+dropbear -p 22
+\end{lstlisting}
+
+Command-line options:
+\begin{longtable}{|p{3cm}|p{10cm}|}
+\hline
+\textbf{Flag} & \textbf{Description} \\
+\hline
+\texttt{-F} & Run in foreground (do not daemonize). \\
+\texttt{-R} & Generate host keys automatically if missing. \\
+\texttt{-p port} & Listen on specified port (default: 22). \\
+\texttt{-r keyfile} & Specify a host key file (repeatable). \\
+\texttt{-s} & Disable password authentication (key-only). \\
+\texttt{-w} & Disallow root login (DISABLED in Veilbox). \\
+\texttt{-g} & Disable password login for all users. \\
+\texttt{-E} & Log to stderr instead of syslog. \\
+\hline
+\end{longtable}
+
+\section{Authentication}
+
+\subsection{Password Authentication}
+
+Root password authentication is configured via /etc/shadow. The password
+hash is generated with SHA-512:
+
+\begin{lstlisting}[language=bash]
+# Generate SHA-512 password hash
+openssl passwd -6 veiladmin
+# Output: $6$<salt>$<hash>
+\end{lstlisting}
+
+\subsection{Public Key Authentication}
+
+Public keys are stored in \texttt{/etc/dropbear/authorized\_keys}.
+Each line contains one key in standard SSH format:
+
+\begin{lstlisting}
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOqyY...
+\end{lstlisting}
+
+\section{Client Connection}
+
+\begin{lstlisting}[language=bash]
+# Key-based authentication
+ssh -i output/ssh-test-key root@localhost -p 2222
+
+# Password authentication
+ssh root@localhost -p 2222
+# Password: veiladmin
+\end{lstlisting}
+
+First connect warning (expected):
+\begin{lstlisting}
+The authenticity of host '[localhost]:2222' can't be established.
+ED25519 key fingerprint is SHA256:...
+Are you sure you want to continue connecting (yes/no/[fingerprint])?
+\end{lstlisting}
+
+
+\section{Key Exchange Algorithms}
+
+Dropbear supports multiple key exchange (KEX) algorithms, negotiated
+during the SSH handshake:
+
+\begin{longtable}{|p{4cm}|p{4cm}|p{4cm}|}
+\hline
+\textbf{Algorithm} & \textbf{Security Level} & \textbf{Speed} \\
+\hline
+curve25519-sha256 & 128-bit equivalent & Fast \\
+ecdh-sha2-nistp256 & 128-bit & Medium \\
+ecdh-sha2-nistp384 & 192-bit & Medium \\
+ecdh-sha2-nistp521 & 256-bit & Slow \\
+diffie-hellman-group14-sha256 & 128-bit & Slow \\
+\hline
+\end{longtable}
+
+\section{Encryption Ciphers}
+
+Supported symmetric ciphers for data encryption:
+
+\begin{longtable}{|p{4cm}|p{3cm}|p{3cm}|p{2cm}|}
+\hline
+\textbf{Cipher} & \textbf{Key Size} & \textbf{Mode} & \textbf{Speed} \\
+\hline
+aes256-ctr & 256 bits & CTR & Fast \\
+aes256-gcm & 256 bits & GCM & Fast (with AES-NI) \\
+aes128-ctr & 128 bits & CTR & Fast \\
+aes128-gcm & 128 bits & GCM & Fast (with AES-NI) \\
+chacha20-poly1305 & 256 bits & AEAD & Very fast \\
+\hline
+\end{longtable}
+
+\section{Host Key Management}
+
+Host keys identify the server to clients. On first connection, the client
+stores the host key fingerprint for verification:
+
+\begin{lstlisting}[language=bash]
+# Generate ED25519 host key (recommended)
+dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key
+
+# Generate RSA fallback host key
+dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key \
+    -s 2048
+
+# View public key fingerprint
+dropbearkey -y -f /etc/dropbear/dropbear_ed25519_host_key
+
+# Remove old host key (run on client)
+ssh-keygen -R '[localhost]:2222'
+\end{lstlisting}
+
+\section{Troubleshooting Dropbear}
+
+\subsection{Debug Mode}
+
+Run Dropbear in foreground with verbose logging:
+
+\begin{lstlisting}
+dropbear -F -E -p 22
+# -F: foreground, -E: log to stderr
+\end{lstlisting}
+
+\subsection{Common Connection Issues}
+
+\begin{itemize}[nosep]
+  \item \textbf{Connection refused}: Dropbear is not running. Check with
+        \texttt{ps | grep dropbear}.
+  \item \textbf{No matching host key type}: The client and server do not
+        share a common host key algorithm. Ensure ED25519 host key exists.
+  \item \textbf{Software caused connection abort}: The QEMU port forwarding
+        is misconfigured. Verify \texttt{hostfwd=tcp::2222-:22} in the
+        QEMU command line.
+  \item \textbf{Permission denied}: Password authentication failed. Verify
+        the password hash in /etc/shadow is correct and that \texttt{-w}
+        flag is NOT set (which disables root login).
+\end{itemize}
