@@ -10,18 +10,7 @@ mount -t tmpfs none /dev/shm
 hostname -F /etc/hostname
 
 mkdir -p /mnt/state
-# Mount state: prefer external persistent disk (vdb), fall back to VEILBOX /state
-if [ -b /dev/vdb ]; then
-    mount /dev/vdb /mnt/state 2>/dev/null && echo "mounted /dev/vdb on /mnt/state" \
-        || mount -t tmpfs none /mnt/state
-elif [ -b /dev/sdb ]; then
-    mount /dev/sdb /mnt/state 2>/dev/null && echo "mounted /dev/sdb on /mnt/state" \
-        || mount -t tmpfs none /mnt/state
-elif mount LABEL=VEILBOX /mnt/state 2>/dev/null; then
-    :
-else
-    mount -t tmpfs none /mnt/state
-fi
+mount LABEL=VEILBOX /mnt/state 2>/dev/null || mount -t tmpfs none /mnt/state
 mkdir -p /mnt/state/containerd /mnt/state/log /mnt/state/volumes
 
 ip link set lo up

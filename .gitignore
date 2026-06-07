@@ -81,6 +81,30 @@ runc.amd64
 Thumbs.db
 
 # ---------------------------------------------------------------------------
+# Kernel temp/config files at root
+# ---------------------------------------------------------------------------
+/rootfs.squashfs
+/state.img
+/.tmp_*
+/.version
+/.checked-*
+/.*.cmd
+/.vmlinux*
+/linux-*.tar.xz
+
+# ---------------------------------------------------------------------------
+# Kernel top-level build files (not part of Veilbox)
+# ---------------------------------------------------------------------------
+/Makefile
+/Kbuild
+/Kconfig
+/COPYING
+/CREDITS
+/MAINTAINERS
+/README
+/LICENSES/
+
+# ---------------------------------------------------------------------------
 # Kernel source tree directories (not part of Veilbox)
 # ---------------------------------------------------------------------------
 /arch/
