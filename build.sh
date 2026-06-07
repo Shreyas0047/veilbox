@@ -14,7 +14,7 @@ BUSYBOX_VERSION="1.35.0"
 CONTAINERD_VERSION="1.7.13"
 RUNC_VERSION="1.1.12"
 NERDCTL_VERSION="1.7.5"
-DROPBEAR_VERSION="2024.85"
+DROPBEAR_VERSION="2025.89"
 
 BUSYBOX_URL="https://busybox.net/downloads/binaries/${BUSYBOX_VERSION}-x86_64-linux-musl/busybox"
 CONTAINERD_URL="https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz"
@@ -252,7 +252,8 @@ set_initramfs_source() {
     local list_file
     list_file="$(gen_initramfs_list)"
 
-    echo 'CONFIG_INITRAMFS_SOURCE="'"$list_file"'"' >> .config
+    local script="$KERNEL_SRC/scripts/config"
+    "$script" --set-str CONFIG_INITRAMFS_SOURCE "$list_file"
     make olddefconfig
 
     ok "Initramfs source set: $list_file"
@@ -262,9 +263,18 @@ set_initramfs_source() {
 build_kernel() {
     info "Building Linux kernel (this will take a while)..."
     cd "$KERNEL_SRC"
-    make -j"$(nproc)" CROSS_COMPILE="$CROSS_COMPILE"
+    # Limit parallel jobs to avoid OOM: use min(nproc, mem_gb)
+    local jobs mem_gb
+    jobs=$(nproc 2>/dev/null || echo 4)
+    mem_gb=$(awk '/MemTotal/ {printf "%d", $2/1024/1024}' /proc/meminfo 2>/dev/null || echo 2)
+    [ "$mem_gb" -lt 2 ] && mem_gb=2
+    if [ "$jobs" -gt "$mem_gb" ]; then
+        jobs=$(( (mem_gb * 3 + 3) / 4 ))  # ~0.75 * mem_gb GB per job
+        [ "$jobs" -lt 1 ] && jobs=1
+    fi
+    make -j"$jobs" CROSS_COMPILE="$CROSS_COMPILE"
     cp arch/x86/bzImage "$OUTPUT_DIR/vmlinuz" 2>/dev/null || cp arch/x86/boot/bzImage "$OUTPUT_DIR/vmlinuz"
-    ok "Kernel built: $OUTPUT_DIR/vmlinuz"
+    ok "Kernel built: $OUTPUT_DIR/vmlinuz (${jobs} parallel jobs)"
 }
 
 # ---------- 7. Set up rootfs directory structure ----------
@@ -287,15 +297,16 @@ setup_rootfs_config() {
     echo 'root:$5$2rUEXw9y7bh3/HRR$IM2VpUIeZXRc9.Fqpnmkiwo8Hg/aR/KE.GV42xZGLB/:20000:0:99999:7:::' > "$ROOTFS_DIR/etc/shadow"
     chmod 600 "$ROOTFS_DIR/etc/shadow"
 
-    # /etc/inittab
+    # /etc/inittab — uses autologin wrapper so veilbox.autologin kernel param
+    # enables auto-login for CI/--check mode; normal boot shows login prompt.
     cat > "$ROOTFS_DIR/etc/inittab" << 'EOF'
 ::sysinit:/etc/init.d/rcS
 ::restart:/sbin/init
 ::shutdown:/bin/umount -a -r
 ::shutdown:/sbin/swapoff -a
 
-tty1::respawn:/sbin/getty -L tty1 115200 vt100
-ttyS0::respawn:/sbin/getty -L ttyS0 115200 vt100
+tty1::respawn:/sbin/autologin tty1 115200 vt100
+ttyS0::respawn:/sbin/autologin ttyS0 115200 vt100
 EOF
 
     # /etc/init.d/rcS
@@ -318,6 +329,7 @@ mkdir -p /mnt/state/containerd /mnt/state/log /mnt/state/volumes
 ip link set lo up
 ip link set eth0 up 2>/dev/null || true
 
+echo "nameserver 10.0.2.3" > /etc/resolv.conf
 /sbin/udhcpc -i eth0 -b -q &
 
 /sbin/syslogd -n &
@@ -325,7 +337,7 @@ ip link set eth0 up 2>/dev/null || true
 mkdir -p /var/run /var/log
 
 /usr/bin/containerd --config /etc/containerd/config.toml &
-/usr/sbin/dropbear -p 22
+/usr/sbin/dropbear -R -p 22
 EOF
     chmod 755 "$ROOTFS_DIR/etc/init.d/rcS"
 
