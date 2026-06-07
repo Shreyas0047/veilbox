@@ -378,6 +378,21 @@ SCRIPT
 Veilbox v1.0
 EOF
 
+    # /sbin/autologin (auto-login wrapper for CI mode)
+    cat > "$ROOTFS_DIR/sbin/autologin" << 'AUTOLOGIN'
+#!/bin/sh
+TTY="${1:-ttyS0}"
+BAUD="${2:-115200}"
+TERM="${3:-vt100}"
+
+if grep -qw veilbox.autologin /proc/cmdline 2>/dev/null; then
+    exec /sbin/login -f root
+else
+    exec /sbin/getty -L "$TTY" "$BAUD" "$TERM"
+fi
+AUTOLOGIN
+    chmod 755 "$ROOTFS_DIR/sbin/autologin"
+
     # /root/.profile (colored prompt)
     cat > "$ROOTFS_DIR/root/.profile" << 'PROFILE'
 export PS1='\[\e[1;31m\]root@veilbox\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '

@@ -13,11 +13,10 @@ mkdir -p /mnt/state
 mount LABEL=VEILBOX /mnt/state 2>/dev/null || mount -t tmpfs none /mnt/state
 mkdir -p /mnt/state/containerd /mnt/state/log /mnt/state/volumes
 
-echo "nameserver 10.0.2.3" > /etc/resolv.conf
-
 ip link set lo up
 ip link set eth0 up 2>/dev/null || true
 
+echo "nameserver 10.0.2.3" > /etc/resolv.conf
 /sbin/udhcpc -i eth0 -b -q &
 
 /sbin/syslogd -n &

@@ -4,7 +4,7 @@ BAUD="${2:-115200}"
 TERM="${3:-vt100}"
 
 if grep -qw veilbox.autologin /proc/cmdline 2>/dev/null; then
-    exec /bin/login -f root
+    exec /sbin/login -f root
 else
     exec /sbin/getty -L "$TTY" "$BAUD" "$TERM"
 fi
