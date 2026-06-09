@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Veilbox — QEMU test runner (direct kernel boot, state disk via raw image)
+# Veilbox — QEMU / VirtualBox test runner
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -13,6 +13,9 @@ LOG_FILE="${LOG_FILE:-}"
 CHECK="${CHECK:-}"
 AUTOLOGIN="${AUTOLOGIN:-}"
 KEEP_STATE="${KEEP_STATE:-}"
+VBOX="${VBOX:-}"
+VBOX_CREATE="${VBOX_CREATE:-}"
+VM_NAME="${VM_NAME:-veilbox}"
 
 KERNEL="$OUTPUT_DIR/vmlinuz"
 DISK_IMG="$OUTPUT_DIR/veilbox.raw"
@@ -25,16 +28,23 @@ RED='\033[1;31m'; GREEN='\033[1;32m'; YELLOW='\033[1;33m'; BLUE='\033[1;34m'; NC
 usage() {
     echo "Usage: $0 [options]"
     echo ""
-    echo "Options:"
+    echo "QEMU options:"
     echo "  --bios          Boot via SeaBIOS/GRUB (disk image) instead of direct kernel"
     echo "  --autologin     Auto-login as root on serial console (direct kernel only)"
     echo "  --keep-state    Preserve state disk across reboots (external state-persist.img)"
     echo "  --timeout SECS  Automatically exit after SECS seconds"
     echo "  --output FILE   Log serial console output to FILE"
     echo "  --check         Exit with status 0 if VM boots to login prompt"
+    echo ""
+    echo "VirtualBox options:"
+    echo "  --vbox          Boot in VirtualBox (creates VM if needed)"
+    echo "  --vbox-create   Register VM in VirtualBox without starting it"
+    echo "  --vm-name NAME  VirtualBox VM name (default: veilbox)"
+    echo ""
+    echo "Common:"
     echo "  --help, -h      Show this help message"
     echo ""
-    echo "Environment variables: MEM, SMP, SSH_PORT, QEMU_BINARY"
+    echo "Environment variables: MEM, SMP, SSH_PORT, QEMU_BINARY, VM_NAME"
     exit 0
 }
 
@@ -46,9 +56,57 @@ for arg in "$@"; do
         --timeout=*)    TIMEOUT="${arg#*=}" ;;
         --output=*)     LOG_FILE="${arg#*=}" ;;
         --check)        CHECK=1 ;;
+        --vbox)         VBOX=1 ;;
+        --vbox-create)  VBOX_CREATE=1 ;;
+        --vm-name=*)    VM_NAME="${arg#*=}" ;;
         --help|-h)      usage ;;
     esac
 done
+
+# ---------- VirtualBox mode ----------
+if [ -n "$VBOX" ] || [ -n "$VBOX_CREATE" ]; then
+    VBOX_MANAGE="${VBOX_MANAGE:-$(command -v VBoxManage 2>/dev/null || true)}"
+    if [ -z "$VBOX_MANAGE" ]; then
+        echo -e "${RED}ERROR${NC}: VBoxManage not found. Install VirtualBox or set VBOX_MANAGE."
+        exit 1
+    fi
+    if [ ! -f "$VDI_IMG" ]; then
+        echo -e "${RED}ERROR${NC}: VDI not found at $VDI_IMG"
+        echo "Run ./build.sh first."
+        exit 1
+    fi
+
+    if "$VBOX_MANAGE" list vms | grep -q "\"$VM_NAME\"" 2>/dev/null; then
+        echo -e "${BLUE}[INFO]${NC} VM '$VM_NAME' already registered."
+    else
+        echo -e "${BLUE}[INFO]${NC} Creating VM '$VM_NAME'..."
+        "$VBOX_MANAGE" createvm --name "$VM_NAME" --ostype "Linux_64" --register
+        "$VBOX_MANAGE" modifyvm "$VM_NAME" --memory "${MEM%G}" --cpus "$SMP" --ioapic on
+        "$VBOX_MANAGE" modifyvm "$VM_NAME" --nic1 nat --natpf1 "ssh,tcp,,${SSH_PORT},,22"
+        "$VBOX_MANAGE" modifyvm "$VM_NAME" --graphicscontroller vmsvga
+        "$VBOX_MANAGE" modifyvm "$VM_NAME" --boot1 disk
+
+        SATA_CTL=$(printf '%s' "SATA Controller")
+        "$VBOX_MANAGE" storagectl "$VM_NAME" --name "$SATA_CTL" --add sata --controller IntelAhci
+        "$VBOX_MANAGE" storageattach "$VM_NAME" --storagectl "$SATA_CTL" --port 0 \
+            --device 0 --type hdd --medium "$(realpath "$VDI_IMG")"
+        echo -e "${GREEN}[OK]${NC}   VM '$VM_NAME' created."
+    fi
+
+    if [ -n "$VBOX_CREATE" ]; then
+        echo ""
+        echo "VM '$VM_NAME' is ready. Start it with:"
+        echo "  $VBOX_MANAGE startvm \"$VM_NAME\""
+        echo ""
+        echo "SSH:  ssh -i output/ssh-test-key root@localhost -p $SSH_PORT"
+        exit 0
+    fi
+
+    echo -e "${BLUE}[INFO]${NC} Starting VM '$VM_NAME'..."
+    echo "  SSH:  ssh -i output/ssh-test-key root@localhost -p $SSH_PORT"
+    echo "  Pass: ssh root@localhost -p $SSH_PORT  (password: veiladmin)"
+    exec "$VBOX_MANAGE" startvm "$VM_NAME"
+fi
 
 if [ -z "$BIOS" ] && [ ! -f "$KERNEL" ]; then
     echo -e "${RED}ERROR${NC}: Kernel not found at $KERNEL"
