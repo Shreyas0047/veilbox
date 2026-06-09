@@ -81,7 +81,9 @@ if [ -n "$VBOX" ] || [ -n "$VBOX_CREATE" ]; then
     else
         echo -e "${BLUE}[INFO]${NC} Creating VM '$VM_NAME'..."
         "$VBOX_MANAGE" createvm --name "$VM_NAME" --ostype "Linux_64" --register
-        "$VBOX_MANAGE" modifyvm "$VM_NAME" --memory "${MEM%G}" --cpus "$SMP" --ioapic on
+        mem_mb=$(echo "$MEM" | sed 's/[Gg]//;s/[Mm].*//')
+        [[ "$MEM" =~ [Mm] ]] || mem_mb=$(( mem_mb * 1024 ))
+        "$VBOX_MANAGE" modifyvm "$VM_NAME" --memory "$mem_mb" --cpus "$SMP" --ioapic on
         "$VBOX_MANAGE" modifyvm "$VM_NAME" --nic1 nat --natpf1 "ssh,tcp,,${SSH_PORT},,22"
         "$VBOX_MANAGE" modifyvm "$VM_NAME" --graphicscontroller vmsvga
         "$VBOX_MANAGE" modifyvm "$VM_NAME" --boot1 disk
