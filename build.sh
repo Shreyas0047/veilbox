@@ -411,6 +411,7 @@ populate_busybox() {
         ln -sf /bin/busybox "$ROOTFS_DIR/sbin/$applet"
     done
     ln -sf /bin/busybox "$ROOTFS_DIR/bin/sh"
+    ln -sf /bin/busybox "$ROOTFS_DIR/bin/login"
     ln -sf /sbin/init "$ROOTFS_DIR/init"
     ok "BusyBox symlinks created"
 }
