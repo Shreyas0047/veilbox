@@ -143,7 +143,7 @@ echo "  SSH:       host:$SSH_PORT -> guest:22"
 [ -n "$LOG_FILE" ]  && echo "  Log:       $LOG_FILE"
 [ "$TIMEOUT" -gt 0 ] && echo "  Timeout:   ${TIMEOUT}s"
 # Create persistent state disk if requested
-KERNEL_CMDLINE="console=ttyS0"
+KERNEL_CMDLINE="console=ttyS0 quiet"
 if [ -n "$KEEP_STATE" ]; then
     if [ ! -f "$STATE_PERSIST" ]; then
         echo -e "${YELLOW}Creating${NC} persistent state disk: $STATE_PERSIST ..."

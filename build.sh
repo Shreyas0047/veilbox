@@ -603,7 +603,7 @@ terminal_output serial console
 
 menuentry "Veilbox" {
     search --label --set=root VEILBOX
-    linux /boot/vmlinuz console=tty0 console=ttyS0
+    linux /boot/vmlinuz console=tty0 console=ttyS0 quiet
 }
 GRUB
     debugfs -w -R "write $grub_cfg_tmp /boot/grub/grub.cfg" "$fs_img" 2>/dev/null || true
