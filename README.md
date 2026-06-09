@@ -120,6 +120,30 @@ MEM=4G ./test.sh
 
 ---
 
+## 🖥️ VirtualBox
+
+```bash
+# One-command setup and boot (creates VM, configures, starts)
+./test.sh --vbox
+
+# Register VM without starting
+./test.sh --vbox-create
+
+# Custom name / port
+VM_NAME=veilbox SSH_PORT=2223 ./test.sh --vbox
+```
+
+**Manual setup:**
+1. New VM → Name: `veilbox` → Type: `Linux` → Version: `Other Linux (64-bit)`
+2. Memory: **2048 MB** (2 GB minimum)
+3. Hard disk: *"Use an existing virtual hard disk file"* → `output/veilbox.vdi`
+4. Settings → Network → Advanced → Port Forwarding → Add: Host `2222` → Guest `22`
+5. Start the VM
+
+SSH in: `ssh -i output/ssh-test-key root@localhost -p 2222`
+
+---
+
 ## 🏗️ Build from Source
 
 The entire OS can be built from source with no sudo required:
@@ -186,8 +210,7 @@ xdg-open veilbox-guide.pdf # Linux
 ```
 veilbox/
 ├── build.sh                  # Build pipeline (14 stages)
-├── test.sh                   # QEMU test runner
-├── AGENTS.md                 # Development context
+├── test.sh                   # QEMU / VirtualBox test runner
 ├── CONTRIBUTING.md           # Contributor guide
 ├── README.md                 # This file
 ├── .gitignore                # Excludes kernel source & build artifacts
