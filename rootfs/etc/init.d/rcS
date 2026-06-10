@@ -13,8 +13,18 @@ mkdir -p /mnt/state
 mount LABEL=VEILBOX /mnt/state 2>/dev/null || mount -t tmpfs none /mnt/state
 mkdir -p /mnt/state/containerd /mnt/state/log /mnt/state/volumes
 
+# Cgroup v2 (needed for containerd/runc resource limits)
+mkdir -p /sys/fs/cgroup
+mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
+
 ip link set lo up
 ip link set eth0 up 2>/dev/null || true
+
+# Kernel networking tweaks for containers
+sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+modprobe br_netfilter 2>/dev/null || true
+sysctl -w net.bridge.bridge-nf-call-iptables=1 >/dev/null 2>&1 || true
+sysctl -w net.bridge.bridge-nf-call-ip6tables=1 >/dev/null 2>&1 || true
 
 echo "nameserver 10.0.2.3" > /etc/resolv.conf
 /sbin/udhcpc -i eth0 -b -q &
