@@ -170,6 +170,70 @@ nerdctl run -d -p 3000:80 nginx:alpine
 
 ---
 
+## 🧩 Host Your Own Website
+
+### Option A — Volume mount (quick, no build)
+```bash
+# Transfer your site to the VM
+scp -P 2222 -r /path/to/website root@localhost:/mnt/state/site
+
+# Inside the VM, serve with nginx
+nerdctl pull nginx:alpine
+nerdctl run -d --name website \
+  --network host \
+  -v /mnt/state/site:/usr/share/nginx/html:ro \
+  nginx:alpine
+
+# Update files anytime — changes are live instantly
+scp -P 2222 new-index.html root@localhost:/mnt/state/site/
+```
+
+Visit **http://localhost:8080/** (or the `WEB_PORT` you set).
+
+### Option B — Node.js app (containerized)
+Apps with a backend (Express, Next.js, etc.) need Node.js:
+
+```bash
+# Transfer your app to the VM
+scp -P 2222 -r /path/to/node-app root@localhost:/mnt/state/myapp
+
+# Inside the VM, run it
+nerdctl run -d --name myapp \
+  --network host \
+  -e PORT=8080 \
+  -v /mnt/state/myapp:/app:ro \
+  -w /app \
+  node:26-slim \
+  node server.js
+```
+
+**Why `--network host`?** The VM uses QEMU user-mode networking which doesn't support kernel bridge operations. `--network host` lets the container bind directly to the VM's network stack, and `-e PORT=8080` makes the app listen on the pre-forwarded port.
+
+### Option C — Build a custom image (requires BuildKit)
+If you've added BuildKit to the VM (see build.sh), you can build reusable images:
+
+```dockerfile
+FROM node:26-slim AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN apt-get update && apt-get install -y python3 make g++ && \
+    npm ci --only=production && apt-get clean
+
+FROM node:26-slim
+WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY . .
+EXPOSE 3000
+CMD ["node", "server.js"]
+```
+
+```bash
+nerdctl build -t myapp:latest /mnt/state/myapp
+nerdctl run -d --name myapp --network host -e PORT=8080 myapp:latest
+```
+
+---
+
 ## 🏗️ Build from Source
 
 The entire OS can be built from source with no sudo required:
@@ -250,6 +314,7 @@ veilbox/
 │   ├── bin/                  # Symlinks to BusyBox
 │   ├── sbin/                 # System utility symlinks + autologin
 │   ├── etc/                  # Configuration (inittab, rcS, passwd, etc.)
+│   ├── opt/cni/bin/          # CNI plugins (bridge, host-local, loopback)
 │   ├── root/                 # Root profile with colored prompt
 │   └── usr/share/udhcpc/     # DHCP client script
 ├── chapters/                 # LaTeX chapter source files (25 chapters)

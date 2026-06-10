@@ -419,7 +419,7 @@ PROFILE
 populate_busybox() {
     download_binary "$ROOTFS_DIR/bin/busybox" "$BUSYBOX_URL" "/usr/bin/busybox" "BusyBox"
 
-    for applet in init mount umount reboot poweroff modprobe getty ip hostname syslogd kill mkdir ln cat echo ls ps sh sleep head grep pidof udhcpc ifconfig nc netstat df tail wc uname login passwd; do
+    for applet in init mount umount reboot poweroff modprobe getty ip hostname syslogd kill mkdir ln cat echo ls ps sh sleep head grep pidof udhcpc ifconfig nc netstat df tail wc uname login passwd wget; do
         ln -sf /bin/busybox "$ROOTFS_DIR/sbin/$applet"
     done
     ln -sf /bin/busybox "$ROOTFS_DIR/bin/sh"
@@ -448,6 +448,23 @@ populate_runc() {
 
 populate_nerdctl() {
     download_tarball "$NERDCTL_URL" "$ROOTFS_DIR/usr/bin" 0 "nerdctl" "nerdctl"
+}
+
+populate_cni_plugins() {
+    local dir="$ROOTFS_DIR/opt/cni/bin"
+    local url="https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz"
+    download_tarball "$url" "$dir" 0 "bridge" "CNI plugins"
+    chmod +x "$dir"/* 2>/dev/null || true
+}
+
+populate_ca_certs() {
+    mkdir -p "$ROOTFS_DIR/etc/ssl/certs"
+    if [ -f /etc/ssl/certs/ca-bundle.crt ]; then
+        cp /etc/ssl/certs/ca-bundle.crt "$ROOTFS_DIR/etc/ssl/certs/ca-certificates.crt"
+        ok "CA certificates copied from host"
+    else
+        warn "No CA bundle found on host at /etc/ssl/certs/ca-bundle.crt"
+    fi
 }
 
 build_dropbear() {
@@ -768,6 +785,8 @@ build_ssh_keys
 copy_libraries
 set_rootfs_perms
 
+populate_cni_plugins
+populate_ca_certs
 set_initramfs_source
 build_kernel
 create_rootfs_squashfs

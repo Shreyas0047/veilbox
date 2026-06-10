@@ -254,9 +254,50 @@ nerdctl build -t myapp:latest /mnt/state/myapp
 \begin{lstlisting}
 nerdctl run -d --name myapp -p 5000:5000 myapp:latest
 \end{lstlisting}
-  \item Push to a registry (optional):
+   \item Push to a registry (optional):
 \begin{lstlisting}
 nerdctl tag myapp:latest registry.example.com/myapp:latest
 nerdctl push registry.example.com/myapp:latest
 \end{lstlisting}
 \end{enumerate}
+
+\section{Tutorial 10: Host Your Own Website}
+
+\textbf{Goal}: Containerize and host your own website on Veilbox.
+
+\begin{enumerate}[nosep]
+  \item Transfer your website folder to the VM:
+\begin{lstlisting}[language=bash]
+# From host
+scp -P 2222 -r /path/to/website root@localhost:/mnt/state/site
+\end{lstlisting}
+  \item Pull a web server image:
+\begin{lstlisting}
+nerdctl pull nginx:alpine
+\end{lstlisting}
+  \item Serve your site with nginx (volume mount):
+\begin{lstlisting}
+nerdctl run -d --name web \
+    --network host \
+    -v /mnt/state/site:/usr/share/nginx/html:ro \
+    nginx:alpine
+\end{lstlisting}
+  \item View from host at \url{http://localhost:8080/}.
+  \item For a Node.js app with a backend:
+\begin{lstlisting}
+nerdctl run -d --name myapp \
+    --network host \
+    -e PORT=8080 \
+    -v /mnt/state/myapp:/app:ro \
+    -w /app \
+    node:26-slim \
+    node server.js
+\end{lstlisting}
+  \item Update live by re-transferring files over SCP --- no restart needed.
+\end{enumerate}
+
+\textbf{Note}: Use \texttt{--network host} instead of port mapping (\texttt{-p 8080:3000})
+because QEMU user-mode networking does not support kernel bridge operations
+(docker-style port forwarding). The \texttt{-e PORT=8080} environment variable
+makes the app listen on the port that is already forwarded by \texttt{test.sh}
+to the host.
