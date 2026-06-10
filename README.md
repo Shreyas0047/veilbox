@@ -137,10 +137,36 @@ VM_NAME=veilbox SSH_PORT=2223 ./test.sh --vbox
 1. New VM → Name: `veilbox` → Type: `Linux` → Version: `Other Linux (64-bit)`
 2. Memory: **2048 MB** (2 GB minimum)
 3. Hard disk: *"Use an existing virtual hard disk file"* → `output/veilbox.vdi`
-4. Settings → Network → Advanced → Port Forwarding → Add: Host `2222` → Guest `22`
+4. Settings → Network → Advanced → Port Forwarding → Add:
+   - Host `2222` → Guest `22` (SSH)
+   - Host `8080` → Guest `8080` (web containers)
 5. Start the VM
 
 SSH in: `ssh -i output/ssh-test-key root@localhost -p 2222`
+
+---
+
+## 🌐 Web Container Access
+
+Port `8080` on your host is forwarded to port `8080` inside the VM (customize with `WEB_PORT=9090 ./test.sh`).
+
+**Run a web server:**
+```bash
+# Inside the VM
+nerdctl pull nginx:alpine
+nerdctl run -d --name web -p 8080:80 nginx:alpine
+```
+
+Then visit **http://localhost:8080/** from your host browser.
+
+**Custom port:**
+```bash
+# Host terminal
+WEB_PORT=3000 ./test.sh
+
+# Inside VM
+nerdctl run -d -p 3000:80 nginx:alpine
+```
 
 ---
 

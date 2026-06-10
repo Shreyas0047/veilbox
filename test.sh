@@ -13,6 +13,7 @@ LOG_FILE="${LOG_FILE:-}"
 CHECK="${CHECK:-}"
 AUTOLOGIN="${AUTOLOGIN:-}"
 KEEP_STATE="${KEEP_STATE:-}"
+WEB_PORT="${WEB_PORT:-8080}"
 VBOX="${VBOX:-}"
 VBOX_CREATE="${VBOX_CREATE:-}"
 VM_NAME="${VM_NAME:-veilbox}"
@@ -41,10 +42,14 @@ usage() {
     echo "  --vbox-create   Register VM in VirtualBox without starting it"
     echo "  --vm-name NAME  VirtualBox VM name (default: veilbox)"
     echo ""
+    echo "Web access:"
+    echo "  Run 'nerdctl run -d -p 8080:80 nginx:alpine' inside the VM,"
+    echo "  then visit http://localhost:${WEB_PORT}/ from your host."
+    echo ""
     echo "Common:"
     echo "  --help, -h      Show this help message"
     echo ""
-    echo "Environment variables: MEM, SMP, SSH_PORT, QEMU_BINARY, VM_NAME"
+    echo "Environment variables: MEM, SMP, SSH_PORT, WEB_PORT, QEMU_BINARY, VM_NAME"
     exit 0
 }
 
@@ -137,9 +142,10 @@ echo "============================================"
 echo ""
 echo "  Kernel:    $KERNEL"
 echo "  Disk:      $DISK_IMG (state partition)"
-echo "  Memory:    $MEM"
-echo "  CPUs:      $SMP"
-echo "  SSH:       host:$SSH_PORT -> guest:22"
+    echo "  Memory:    $MEM"
+    echo "  CPUs:      $SMP"
+    echo "  SSH:       host:$SSH_PORT -> guest:22"
+    echo "  Web:       host:$WEB_PORT -> guest:$WEB_PORT"
 [ -n "$LOG_FILE" ]  && echo "  Log:       $LOG_FILE"
 [ "$TIMEOUT" -gt 0 ] && echo "  Timeout:   ${TIMEOUT}s"
 # Create persistent state disk if requested
@@ -183,7 +189,7 @@ qemu_base=(
     -no-reboot
     -cpu host
     -enable-kvm
-    -netdev user,id=net0,hostfwd=tcp::${SSH_PORT}-:22
+    -netdev user,id=net0,hostfwd=tcp::${SSH_PORT}-:22,hostfwd=tcp::${WEB_PORT}-:${WEB_PORT}
     -device virtio-net,netdev=net0
 )
 
