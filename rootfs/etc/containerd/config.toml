@@ -1,5 +1,6 @@
 root = "/mnt/state/containerd"
 state = "/run/containerd"
+log_level = "warn"
 
 disabled_plugins = ["cri"]
 

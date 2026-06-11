@@ -340,13 +340,13 @@ sysctl -w net.bridge.bridge-nf-call-iptables=1 >/dev/null 2>&1 || true
 sysctl -w net.bridge.bridge-nf-call-ip6tables=1 >/dev/null 2>&1 || true
 
 echo "nameserver 10.0.2.3" > /etc/resolv.conf
-/sbin/udhcpc -i eth0 -b -q &
+/sbin/udhcpc -i eth0 -b -q >/dev/null 2>&1 &
 
 /sbin/syslogd -n &
 
 mkdir -p /var/run /var/log
 
-/usr/bin/containerd --config /etc/containerd/config.toml &
+/usr/bin/containerd --config /etc/containerd/config.toml >/var/log/containerd.log 2>&1 &
 /usr/sbin/dropbear -R -p 22
 EOF
     chmod 755 "$ROOTFS_DIR/etc/init.d/rcS"
@@ -355,6 +355,7 @@ EOF
     cat > "$ROOTFS_DIR/etc/containerd/config.toml" << 'EOF'
 root = "/mnt/state/containerd"
 state = "/run/containerd"
+log_level = "warn"
 
 disabled_plugins = ["cri"]
 
