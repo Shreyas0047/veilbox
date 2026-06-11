@@ -302,8 +302,7 @@ setup_rootfs_config() {
     cat > "$ROOTFS_DIR/etc/inittab" << 'EOF'
 ::sysinit:/etc/init.d/rcS
 ::restart:/sbin/init
-::shutdown:/bin/umount -a -r
-::shutdown:/sbin/swapoff -a
+::shutdown:/sbin/umount -a -r
 
 tty1::respawn:/sbin/autologin tty1 115200 vt100
 ttyS0::respawn:/sbin/autologin ttyS0 115200 vt100
