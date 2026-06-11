@@ -469,8 +469,10 @@ populate_cni_plugins() {
 
 populate_ca_certs() {
     mkdir -p "$ROOTFS_DIR/etc/ssl/certs"
+    rm -f "$ROOTFS_DIR/etc/ssl/certs/ca-certificates.crt"
     if [ -f /etc/ssl/certs/ca-bundle.crt ]; then
-        cp /etc/ssl/certs/ca-bundle.crt "$ROOTFS_DIR/etc/ssl/certs/ca-certificates.crt"
+        cp -L /etc/ssl/certs/ca-bundle.crt "$ROOTFS_DIR/etc/ssl/certs/ca-certificates.crt"
+        chmod 644 "$ROOTFS_DIR/etc/ssl/certs/ca-certificates.crt"
         ok "CA certificates copied from host"
     else
         warn "No CA bundle found on host at /etc/ssl/certs/ca-bundle.crt"
