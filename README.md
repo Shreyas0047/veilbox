@@ -116,6 +116,8 @@ Boot time: **under 15 seconds** to `veilbox login:` prompt.
 
 # Custom RAM
 MEM=4G ./test.sh
+
+# To exit QEMU: Ctrl-A, then X (inside VM: shutdown)
 ```
 
 ---
@@ -312,7 +314,7 @@ veilbox/
 │       └── custom-os.config  # Kernel config fragment (111+ options)
 ├── rootfs/                   # Initramfs source tree
 │   ├── bin/                  # Symlinks to BusyBox
-│   ├── sbin/                 # System utility symlinks + autologin
+│   ├── sbin/                 # System utilities (autologin, shutdown)
 │   ├── etc/                  # Configuration (inittab, rcS, passwd, etc.)
 │   ├── opt/cni/bin/          # CNI plugins (bridge, host-local, loopback)
 │   ├── root/                 # Root profile with colored prompt

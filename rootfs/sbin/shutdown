@@ -1,0 +1,5 @@
+#!/bin/sh
+case "$*" in
+  *-r*) exec /sbin/reboot "$@" ;;
+  *-h*|*-P*|now|*) exec /sbin/poweroff "$@" ;;
+esac

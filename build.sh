@@ -412,6 +412,16 @@ IP="${IP%%/*}"
 [ -n "$IP" ] && echo "  IP: $IP"
 PROFILE
 
+    # /sbin/shutdown (BusyBox v1.35.0 lacks shutdown applet)
+    cat > "$ROOTFS_DIR/sbin/shutdown" << 'SHUTDOWN'
+#!/bin/sh
+case "$*" in
+  *-r*) exec /sbin/reboot "$@" ;;
+  *-h*|*-P*|now|*) exec /sbin/poweroff "$@" ;;
+esac
+SHUTDOWN
+    chmod 755 "$ROOTFS_DIR/sbin/shutdown"
+
     ok "Rootfs config files created"
 }
 
