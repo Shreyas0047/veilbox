@@ -68,7 +68,6 @@ for arg in "$@"; do
     esac
 done
 
-# ---------- VirtualBox mode ----------
 if [ -n "$VBOX" ] || [ -n "$VBOX_CREATE" ]; then
     VBOX_MANAGE="${VBOX_MANAGE:-$(command -v VBoxManage 2>/dev/null || true)}"
     if [ -z "$VBOX_MANAGE" ]; then
@@ -148,7 +147,6 @@ echo "  Disk:      $DISK_IMG (state partition)"
     echo "  Web:       host:$WEB_PORT -> guest:$WEB_PORT"
 [ -n "$LOG_FILE" ]  && echo "  Log:       $LOG_FILE"
 [ "$TIMEOUT" -gt 0 ] && echo "  Timeout:   ${TIMEOUT}s"
-# Create persistent state disk if requested
 KERNEL_CMDLINE="console=ttyS0 quiet"
 if [ -n "$KEEP_STATE" ]; then
     if [ ! -f "$STATE_PERSIST" ]; then
@@ -211,7 +209,6 @@ if [ -n "$CHECK" ]; then
     [ -n "$BIOS" ] && TIMEOUT=60 || TIMEOUT=45
     local_log="${LOG_FILE:-$(mktemp /tmp/qemu-serial-XXXXXX)}"
     [ -z "$LOG_FILE" ] && trap "rm -f '$local_log'" EXIT
-    # Rebuild args with autologin enabled
     if [ -z "$BIOS" ]; then
         KERNEL_CMDLINE="$KERNEL_CMDLINE veilbox.autologin"
         qemu_args=("${qemu_base[@]}" -kernel "$KERNEL" -append "$KERNEL_CMDLINE")

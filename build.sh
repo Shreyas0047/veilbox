@@ -30,7 +30,6 @@ ok()    { echo -e "${GREEN}[OK]${NC}   $*" >&2; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $*" >&2; }
 err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 
-# Parse command line arguments
 CLEAN=0
 for arg in "$@"; do
     case "$arg" in
@@ -50,7 +49,7 @@ done
 
 require_tool() {
     if ! command -v "$1" &>/dev/null; then
-        err "'$1' not found in PATH. Install with: dnf install $2"
+        err "'$1' not found. Install the '$2' package for your distro."
     fi
 }
 
@@ -60,30 +59,60 @@ require_file() {
     fi
 }
 
-# ---------- 0. Install dependencies (Fedora) ----------
 install_deps() {
-    if [ ! -f /etc/fedora-release ]; then
-        warn "Not running Fedora — skipping package install. Ensure build dependencies are installed."
-        return
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
     fi
 
-    info "Detected Fedora — checking packages..."
-    if sudo -n true 2>/dev/null; then
-        sudo dnf install -y \
-            squashfs-tools e2fsprogs wget tar golang \
-            qemu-system-x86 qemu-img \
-            containerd nerdctl dropbear busybox-static \
-            kernel-devel gcc make flex bison openssl-devel \
-            elfutils-libelf-devel ncurses-devel bc rsync \
-            xz bzip2 grub2-tools grub2-pc-modules 2>&1 | tail -3
-        ok "Fedora packages installed"
-    else
-        warn "Sudo requires a password — skipping automated package install."
-        warn "If tools are missing, run: sudo dnf install -y squashfs-tools e2fsprogs wget tar golang qemu-system-x86 qemu-img containerd nerdctl dropbear busybox-static kernel-devel gcc make flex bison openssl-devel elfutils-libelf-devel ncurses-devel bc rsync xz bzip2 grub2-tools grub2-pc-modules"
-    fi
+    case "${ID,,}" in
+        fedora)
+            info "Detected Fedora — checking packages..."
+            if sudo -n true 2>/dev/null; then
+                sudo dnf install -y \
+                    squashfs-tools e2fsprogs wget tar golang \
+                    qemu-system-x86 qemu-img \
+                    gcc make flex bison openssl-devel \
+                    elfutils-libelf-devel ncurses-devel bc rsync \
+                    xz bzip2 grub2-tools grub2-pc-modules 2>&1 | tail -3
+                ok "Fedora packages installed"
+            else
+                warn "Sudo requires a password — skipping automated package install."
+            fi
+            ;;
+        ubuntu|debian)
+            info "Detected Debian-based distro — checking packages..."
+            if sudo -n true 2>/dev/null; then
+                sudo apt-get update -qq
+                sudo apt-get install -y -qq \
+                    squashfs-tools e2fsprogs wget golang-go \
+                    qemu-system-x86 qemu-utils \
+                    gcc make flex bison libssl-dev \
+                    libelf-dev libncurses-dev bc rsync \
+                    xz-utils bzip2 grub-pc-bin xxd 2>&1 | tail -3
+                ok "Debian packages installed"
+            else
+                warn "Sudo requires a password — skipping automated package install."
+            fi
+            ;;
+        arch)
+            info "Detected Arch Linux — checking packages..."
+            if sudo -n true 2>/dev/null; then
+                sudo pacman -Sy --noconfirm \
+                    squashfs-tools e2fsprogs wget go \
+                    qemu-system-x86 qemu-img \
+                    gcc make flex bison openssl \
+                    bc rsync xz bzip2 grub 2>&1 | tail -3
+                ok "Arch packages installed"
+            else
+                warn "Sudo requires a password — skipping automated package install."
+            fi
+            ;;
+        *)
+            warn "Unknown distro '${ID:-unknown}'. Install build dependencies manually."
+            ;;
+    esac
 }
 
-# ---------- 1. Download a static binary with fallback ----------
 download_binary() {
     local dest="$1" url="$2" sysbin="$3" name="$4"
 
@@ -143,7 +172,6 @@ download_tarball() {
     fi
 }
 
-# ---------- 2. Generate initramfs file list (with device nodes) ----------
 gen_initramfs_list() {
     local list_file="$SCRIPT_DIR/initramfs.list"
     local tmp_list
@@ -186,7 +214,6 @@ DEVLIST
     echo "$list_file"
 }
 
-# ---------- 3. Configure kernel (base options, no initramfs yet) ----------
 configure_kernel() {
     info "Configuring Linux kernel..."
 
@@ -213,7 +240,6 @@ configure_kernel() {
     ok "Kernel configured with base options"
 }
 
-# ---------- 4. Strip unnecessary kernel drivers ----------
 strip_kernel_config() {
     info "Stripping unnecessary kernel drivers..."
 
@@ -243,7 +269,6 @@ strip_kernel_config() {
     ok "Kernel size reduced"
 }
 
-# ---------- 5. Set initramfs source (after rootfs is populated) ----------
 set_initramfs_source() {
     info "Generating initramfs file list with device nodes..."
 
@@ -259,7 +284,6 @@ set_initramfs_source() {
     ok "Initramfs source set: $list_file"
 }
 
-# ---------- 6. Build kernel ----------
 build_kernel() {
     info "Building Linux kernel (this will take a while)..."
     cd "$KERNEL_SRC"
@@ -277,23 +301,18 @@ build_kernel() {
     ok "Kernel built: $OUTPUT_DIR/vmlinuz (${jobs} parallel jobs)"
 }
 
-# ---------- 7. Set up rootfs directory structure ----------
 setup_rootfs_dirs() {
     mkdir -p "$ROOTFS_DIR"/{bin,sbin,usr/bin,usr/sbin,etc/init.d,etc/dropbear,etc/containerd,dev,proc,sys,tmp,root,mnt/state,var/run,var/log,lib}
     mkdir -p "$ROOTFS_DIR/usr/share/udhcpc"
 }
 
-# ---------- 8. Create rootfs config files (survive --clean) ----------
 setup_rootfs_config() {
     mkdir -p "$ROOTFS_DIR/etc/init.d" "$ROOTFS_DIR/etc/containerd" "$ROOTFS_DIR/etc/dropbear"
 
-    # /etc/hostname
     echo "veilbox" > "$ROOTFS_DIR/etc/hostname"
 
-    # /etc/passwd (root with shell at /bin/sh)
     echo 'root:x:0:0:root:/root:/bin/sh' > "$ROOTFS_DIR/etc/passwd"
 
-    # /etc/shadow (root with password veiladmin)
     echo 'root:$5$2rUEXw9y7bh3/HRR$IM2VpUIeZXRc9.Fqpnmkiwo8Hg/aR/KE.GV42xZGLB/:20000:0:99999:7:::' > "$ROOTFS_DIR/etc/shadow"
     chmod 600 "$ROOTFS_DIR/etc/shadow"
 
@@ -350,7 +369,6 @@ mkdir -p /var/run /var/log
 EOF
     chmod 755 "$ROOTFS_DIR/etc/init.d/rcS"
 
-    # /etc/containerd/config.toml
     cat > "$ROOTFS_DIR/etc/containerd/config.toml" << 'EOF'
 root = "/mnt/state/containerd"
 state = "/run/containerd"
@@ -365,7 +383,6 @@ disabled_plugins = ["cri"]
   address = ""
 EOF
 
-    # /usr/share/udhcpc/default.script
     cat > "$ROOTFS_DIR/usr/share/udhcpc/default.script" << 'SCRIPT'
 #!/bin/sh
 case "$1" in
@@ -383,7 +400,6 @@ exit 0
 SCRIPT
     chmod 755 "$ROOTFS_DIR/usr/share/udhcpc/default.script"
 
-    # /etc/issue (login banner)
     cat > "$ROOTFS_DIR/etc/issue" << 'EOF'
 Veilbox v1.0
 EOF
@@ -425,7 +441,6 @@ SHUTDOWN
     ok "Rootfs config files created"
 }
 
-# ---------- 9. Populate rootfs with static binaries ----------
 populate_busybox() {
     download_binary "$ROOTFS_DIR/bin/busybox" "$BUSYBOX_URL" "/usr/bin/busybox" "BusyBox"
 
@@ -492,10 +507,9 @@ build_dropbear() {
         cp /usr/sbin/dropbear "$dpb_bin"
         chmod +x "$dpb_bin"
     else
-        err "Dropbear not found at /usr/sbin/dropbear. Install with: dnf install -y dropbear"
+        err "Dropbear not found at /usr/sbin/dropbear. Install the dropbear package for your distro"
     fi
 
-    # Generate host keys using a locally running dropbearkey
     info "Generating Dropbear host keys..."
     if command -v dropbearkey &>/dev/null; then
         dropbearkey -t rsa -f "$ROOTFS_DIR/etc/dropbear/dropbear_rsa_host_key" 2>/dev/null || warn "RSA key generation failed"
@@ -520,7 +534,6 @@ build_ssh_keys() {
         # Also copy to /etc/dropbear for dropbear's default authorized_keys path
         cp "$key_dir/id_ed25519.pub" "$ROOTFS_DIR/etc/dropbear/authorized_keys"
         chmod 600 "$ROOTFS_DIR/etc/dropbear/authorized_keys"
-        # Export test key for host use
         cp "$key_dir/id_ed25519" "$OUTPUT_DIR/ssh-test-key"
         chmod 600 "$OUTPUT_DIR/ssh-test-key"
         ok "SSH key pair generated"
@@ -529,7 +542,6 @@ build_ssh_keys() {
     fi
 }
 
-# ---------- 9. Copy shared libraries for dynamic binaries ----------
 copy_libraries() {
     info "Copying shared libraries for dynamic binaries..."
 
@@ -578,14 +590,12 @@ copy_libraries() {
     ok "Shared libraries copied to rootfs ($(find "$ROOTFS_DIR/lib64" -type f | wc -l) files)"
 }
 
-# ---------- 10. Set rootfs permissions ----------
 set_rootfs_perms() {
     chmod 755 "$ROOTFS_DIR/etc/init.d/rcS" 2>/dev/null || true
     chmod 700 "$ROOTFS_DIR/root" 2>/dev/null || true
     chmod 1777 "$ROOTFS_DIR/tmp" 2>/dev/null || true
 }
 
-# ---------- 11. Create state image ----------
 create_state_img() {
     local img="$OUTPUT_DIR/state.img"
     info "Creating state image (ext4, 128MB)..."
@@ -595,7 +605,6 @@ create_state_img() {
     ok "State image created: $img"
 }
 
-# ---------- 12. Create rootfs.squashfs ----------
 create_rootfs_squashfs() {
     local img="$OUTPUT_DIR/rootfs.squashfs"
     info "Creating SquashFS image (xz compression)..."
@@ -606,7 +615,6 @@ create_rootfs_squashfs() {
     ok "SquashFS image created: $img ($size)"
 }
 
-# ---------- 13. Create bootable disk image with GRUB ----------
 create_bootable_disk() {
     local raw="$OUTPUT_DIR/veilbox.raw"
     local img_size="${DISK_SIZE:-8}"  # GB
@@ -615,12 +623,10 @@ create_bootable_disk() {
     info "Creating bootable disk image (${img_size}GB)..."
     rm -f "$raw" "$fs_img"
 
-    # Step 1: Create standalone ext4 filesystem image at OUTPUT_DIR (for disk space)
     info "Creating ext4 filesystem..."
     dd if=/dev/zero of="$fs_img" bs=1M count=$((img_size * 1024 - 12)) status=progress
     mkfs.ext4 -F -L VEILBOX "$fs_img" > /dev/null 2>&1
 
-    # Step 2: Populate using debugfs (no root required)
     info "Populating filesystem with kernel and config..."
 
     debugfs -w -R "mkdir /boot" "$fs_img" 2>/dev/null || true
@@ -660,22 +666,20 @@ GRUB
         done
     fi
 
-    # Step 3: Create partitioned disk image
     info "Creating disk layout..."
     dd if=/dev/zero of="$raw" bs=1M count=$((img_size * 1024)) status=progress
     printf 'type=83, bootable\n' | sfdisk "$raw" > /dev/null 2>&1
 
-    # Step 4: Embed filesystem into partition 1 (starts at sector 2048)
     info "Embedding filesystem into partition..."
     dd if="$fs_img" of="$raw" bs=512 seek=2048 conv=notrunc status=progress
     rm -f "$fs_img"
 
-    # Step 5: Install GRUB rootlessly — preserve partition table
     info "Installing GRUB bootloader..."
-    PYTHON_RAW="$raw" python3 << 'PYGRUB' || err "GRUB installation failed"
+    PYTHON_RAW="$raw" GRUB_MKIMAGE="$GRUB_MKIMAGE" python3 << 'PYGRUB' || err "GRUB installation failed"
 import subprocess, os, sys, tempfile
 
 raw_path = os.environ["PYTHON_RAW"]
+grub_mkimage = os.environ["GRUB_MKIMAGE"]
 boot_img_path = "/usr/lib/grub/i386-pc/boot.img"
 core_img_mods = ["ext2", "part_msdos", "biosdisk", "configfile",
                  "search_label", "serial", "terminal", "linux",
@@ -687,9 +691,9 @@ with tempfile.NamedTemporaryFile(mode='w', suffix='.cfg', delete=False) as f:
     f.write('set prefix=($root)/boot/grub\n')
     embedded_cfg = f.name
 
-# Generate core.img via grub2-mkimage (blocklist already correct)
+# Generate core.img via grub-mkimage
 result = subprocess.run(
-    ["grub2-mkimage", "-c", embedded_cfg,
+    [grub_mkimage, "-c", embedded_cfg,
      "-O", "i386-pc", "-o", "/tmp/veilbox-core.img",
      "-p", "/boot/grub"] + core_img_mods,
     capture_output=True
@@ -734,7 +738,6 @@ PYGRUB
     ok "Bootable disk created: $raw ($img_size GB)"
 }
 
-# ---------- 14. Convert raw disk to VDI ----------
 convert_to_vdi() {
     local raw="$OUTPUT_DIR/veilbox.raw"
     local vdi="$OUTPUT_DIR/veilbox.vdi"
@@ -750,7 +753,6 @@ convert_to_vdi() {
     ok "VDI image created: $vdi ($size)"
 }
 
-# ---------- Main ----------
 if [ "$CLEAN" -eq 1 ]; then
     echo "Cleaning build artifacts..."
     rm -rf "$ROOTFS_DIR" "$OUTPUT_DIR" "$SCRIPT_DIR/initramfs.list" "$KERNEL_SRC/.config"
@@ -777,7 +779,16 @@ require_tool xz "xz"
 require_tool bzip2 "bzip2"
 require_tool dd "coreutils"
 require_tool python3 "python3"
-require_tool grub2-mkimage "grub2-tools"
+# Detect GRUB mkimage tool
+GRUB_MKIMAGE=""
+if command -v grub2-mkimage &>/dev/null; then
+    GRUB_MKIMAGE="grub2-mkimage"
+elif command -v grub-mkimage &>/dev/null; then
+    GRUB_MKIMAGE="grub-mkimage"
+fi
+if [ -z "$GRUB_MKIMAGE" ]; then
+    err "grub2-mkimage or grub-mkimage not found. Install grub2-tools (Fedora) or grub-pc-bin (Debian) or grub (Arch)."
+fi
 require_tool debugfs "e2fsprogs"
 require_tool sfdisk "util-linux"
 require_tool qemu-img "qemu-img"

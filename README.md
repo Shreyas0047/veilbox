@@ -1,42 +1,28 @@
-<div align="center">
-  <pre>
+```
 __      __  _ _ _               
 \ \    / / (_) | |              
  \ \  / /__ _| | |__   _____  __
   \ \/ / _ \ | | '_ \ / _ \ \/ /
    \  /  __/ | | |_) | (_) >  < 
     \/ \___|_|_|_.__/ \___/_/\_\
-  </pre>
-  <h3>Minimal bootable OS with embedded services</h3>
-  <p>Custom Linux kernel · BusyBox · containerd · Dropbear SSH</p>
-  <p>
-    <a href="#-quick-start"><img src="https://img.shields.io/badge/-Quick%20Start-2ea44f?style=for-the-badge" alt="Quick Start"></a>
-    <a href="#-features"><img src="https://img.shields.io/badge/-Features-1a73e8?style=for-the-badge" alt="Features"></a>
-    <a href="#%EF%B8%8F-ssh-access"><img src="https://img.shields.io/badge/-SSH%20Access-f7931e?style=for-the-badge" alt="SSH Access"></a>
-    <a href="#-build-from-source"><img src="https://img.shields.io/badge/-Build%20From%20Source-6f42c1?style=for-the-badge" alt="Build From Source"></a>
-    <a href="#-build-guide"><img src="https://img.shields.io/badge/-Build%20Guide-8b5cf6?style=for-the-badge" alt="Build Guide"></a>
-  </p>
-  <p>
-    <img src="https://img.shields.io/badge/kernel-7.1.0--rc6-blue?style=flat-square&logo=linux" alt="Kernel">
-    <img src="https://img.shields.io/badge/init-BusyBox-orange?style=flat-square&logo=alpinelinux" alt="Init">
-    <img src="https://img.shields.io/badge/SSH-Dropbear-success?style=flat-square&logo=ssh" alt="SSH">
-    <img src="https://img.shields.io/badge/container-runtime-containerd-important?style=flat-square&logo=docker" alt="Containerd">
-    <img src="https://img.shields.io/badge/boot-GRUB%20BIOS-8892b0?style=flat-square" alt="GRUB">
-    <img src="https://img.shields.io/github/license/Shreyas0047/veilbox?style=flat-square" alt="License">
-    <img src="https://img.shields.io/github/repo-size/Shreyas0047/veilbox?style=flat-square" alt="Size">
-  </p>
-  <br>
-</div>
+```
+
+Minimal bootable OS — custom kernel, BusyBox, containerd, Dropbear SSH. Boots from a single disk in under 15 seconds.
+
+```
+git clone https://github.com/Shreyas0047/veilbox.git
+cd veilbox
+git lfs pull
+./test.sh           # login: root / veiladmin
+```
 
 ---
 
-A **single-disk, bootable operating system** built from source: custom Linux kernel with embedded initramfs, BusyBox userspace, containerd container runtime, and Dropbear SSH. Boots in under 15 seconds to a working container host.
-
-Clone → `git lfs pull` → `./test.sh` — under 30 seconds to the login prompt.
+I built this because I wanted a minimal container host that boots fast, doesn't need a full distro, and is fun to tinker with. Everything is built from source — kernel, initramfs, disk image.
 
 ---
 
-## 📦 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -69,7 +55,7 @@ Boot time: **under 15 seconds** to `veilbox login:` prompt.
 
 ---
 
-## ✨ Features
+## Features
 
 | Feature | Details |
 |---------|---------|
@@ -87,7 +73,7 @@ Boot time: **under 15 seconds** to `veilbox login:` prompt.
 
 ---
 
-## 🔐 Credentials
+## Credentials
 
 | Method | Command |
 |--------|---------|
@@ -96,7 +82,7 @@ Boot time: **under 15 seconds** to `veilbox login:` prompt.
 
 ---
 
-## 🖥️ QEMU
+## QEMU
 
 ```bash
 # Direct kernel boot (default, fastest)
@@ -122,7 +108,7 @@ MEM=4G ./test.sh
 
 ---
 
-## 🖥️ VirtualBox
+## VirtualBox
 
 ```bash
 # One-command setup and boot (creates VM, configures, starts)
@@ -148,7 +134,7 @@ SSH in: `ssh -i output/ssh-test-key root@localhost -p 2222`
 
 ---
 
-## 🌐 Web Container Access
+## Web Container Access
 
 Port `8080` on your host is forwarded to port `8080` inside the VM (customize with `WEB_PORT=9090 ./test.sh`).
 
@@ -172,7 +158,7 @@ nerdctl run -d -p 3000:80 nginx:alpine
 
 ---
 
-## 🧩 Host Your Own Website
+## Host Your Own Website
 
 ### Option A — Volume mount (quick, no build)
 ```bash
@@ -236,7 +222,7 @@ nerdctl run -d --name myapp --network host -e PORT=8080 myapp:latest
 
 ---
 
-## 🏗️ Build from Source
+## Build from Source
 
 The entire OS can be built from source with no sudo required:
 
@@ -272,7 +258,7 @@ MEM=2G ./test.sh
 
 ---
 
-## 📖 Build Guide
+## Build Guide
 
 A **152-page LaTeX technical reference** is included:
 
@@ -297,7 +283,7 @@ xdg-open veilbox-guide.pdf # Linux
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 veilbox/
@@ -331,24 +317,16 @@ veilbox/
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on setting up a development environment, coding standards, and the PR process.
 
 ---
 
-## 📄 License
+## License
 
 [GNU General Public License v2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)
 
 ---
 
-<div align="center">
-  <sub>
-    Built for cybersecurity education and lab environments.
-    <br>
-    <a href="https://github.com/Shreyas0047/veilbox">GitHub</a> ·
-    <a href="https://shreyas0047.github.io/veilbox">Website</a> ·
-    <a href="CONTRIBUTING.md">Contributing</a>
-  </sub>
-</div>
+Built for learning and lab environments. [GitHub](https://github.com/Shreyas0047/veilbox) · [Website](https://shreyas0047.github.io/veilbox)
