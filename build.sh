@@ -73,7 +73,8 @@ install_deps() {
                     qemu-system-x86 qemu-img \
                     gcc make flex bison openssl-devel \
                     elfutils-libelf-devel ncurses-devel bc rsync \
-                    xz bzip2 grub2-tools grub2-pc-modules 2>&1 | tail -3
+                    xz bzip2 grub2-tools grub2-pc-modules \
+                    apparmor-utils iptables-legacy nftables 2>&1 | tail -3
                 ok "Fedora packages installed"
             else
                 warn "Sudo requires a password — skipping automated package install."
@@ -88,7 +89,8 @@ install_deps() {
                     qemu-system-x86 qemu-utils \
                     gcc make flex bison libssl-dev \
                     libelf-dev libncurses-dev bc rsync \
-                    xz-utils bzip2 grub-pc-bin xxd 2>&1 | tail -3
+                    xz-utils bzip2 grub-pc-bin xxd \
+                    apparmor-utils iptables nftables 2>&1 | tail -3
                 ok "Debian packages installed"
             else
                 warn "Sudo requires a password — skipping automated package install."
@@ -101,7 +103,8 @@ install_deps() {
                     squashfs-tools e2fsprogs wget go \
                     qemu-system-x86 qemu-img \
                     gcc make flex bison openssl \
-                    bc rsync xz bzip2 grub 2>&1 | tail -3
+                    bc rsync xz bzip2 grub \
+                    apparmor iptables nftables 2>&1 | tail -3
                 ok "Arch packages installed"
             else
                 warn "Sudo requires a password — skipping automated package install."
@@ -342,6 +345,7 @@ hostname -F /etc/hostname
 
 mkdir -p /mnt/state
 mount LABEL=VEILBOX /mnt/state 2>/dev/null || mount -t tmpfs none /mnt/state
+mount -o remount,noexec,nodev,nosuid /mnt/state 2>/dev/null || true
 mkdir -p /mnt/state/containerd /mnt/state/log /mnt/state/volumes
 
 # Cgroup v2 (needed for containerd/runc resource limits)
@@ -356,6 +360,18 @@ sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
 modprobe br_netfilter 2>/dev/null || true
 sysctl -w net.bridge.bridge-nf-call-iptables=1 >/dev/null 2>&1 || true
 sysctl -w net.bridge.bridge-nf-call-ip6tables=1 >/dev/null 2>&1 || true
+
+# Security subsystems
+mount -t securityfs none /sys/kernel/security 2>/dev/null || true
+apparmor_parser -r /etc/apparmor.d/ 2>/dev/null || true
+
+# Audit rules for container security events
+auditctl -e 1 2>/dev/null || true
+auditctl -a exit,always -F arch=b64 -S execve -k container-exec 2>/dev/null || true
+auditctl -a exit,always -F arch=b64 -S clone,clone3 -k container-clone 2>/dev/null || true
+
+# NAT for external traffic from containers
+/sbin/iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || true
 
 echo "nameserver 10.0.2.3" > /etc/resolv.conf
 /sbin/udhcpc -i eth0 -b -q >/dev/null 2>&1 &
@@ -381,6 +397,14 @@ disabled_plugins = ["cri"]
 
 [metrics]
   address = ""
+
+[plugins]
+  [plugins."io.containerd.grpc.v1.cri".containerd]
+    default_runtime_name = "runc"
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+      runtime_type = "io.containerd.runc.v2"
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+        SystemdCgroup = true
 EOF
 
     cat > "$ROOTFS_DIR/usr/share/udhcpc/default.script" << 'SCRIPT'
@@ -426,6 +450,7 @@ IP=$(ip addr show eth0 2>/dev/null | grep 'inet ' | head -1)
 IP="${IP#*inet }"
 IP="${IP%%/*}"
 [ -n "$IP" ] && echo "  IP: $IP"
+echo "  Default container limits: 1 CPU, 512MB RAM (override with --cpus / --memory)"
 PROFILE
 
     # /sbin/shutdown (BusyBox v1.35.0 lacks shutdown applet)
@@ -437,6 +462,28 @@ case "$*" in
 esac
 SHUTDOWN
     chmod 755 "$ROOTFS_DIR/sbin/shutdown"
+
+    # Subordinate UID/GID ranges for rootless containers
+    echo 'root:100000:65536' > "$ROOTFS_DIR/etc/subuid"
+    echo 'root:100000:65536' > "$ROOTFS_DIR/etc/subgid"
+
+    # Audit rules for container security events
+    mkdir -p "$ROOTFS_DIR/etc/audit/rules.d"
+    cat > "$ROOTFS_DIR/etc/audit/rules.d/container.rules" << 'AUDIT'
+-w /usr/bin/containerd -p wa -k containerd
+-w /usr/sbin/dropbear -p wa -k dropbear
+-a exit,always -F arch=b64 -S execve -k process-exec
+-a exit,always -F arch=b32 -S execve -k process-exec
+AUDIT
+
+    # Nerdctl config with user namespace remapping defaults
+    mkdir -p "$ROOTFS_DIR/etc/nerdctl"
+    cat > "$ROOTFS_DIR/etc/nerdctl/nerdctl.toml" << 'NERDCTL'
+# Default nerdctl settings
+namespace = "default"
+cgroup_manager = "cgroupfs"
+host_gateway_ip = "10.0.2.2"
+NERDCTL
 
     ok "Rootfs config files created"
 }
@@ -473,6 +520,7 @@ populate_runc() {
 
 populate_nerdctl() {
     download_tarball "$NERDCTL_URL" "$ROOTFS_DIR/usr/bin" 0 "nerdctl" "nerdctl"
+    chmod +x "$ROOTFS_DIR/usr/bin/nerdctl" 2>/dev/null || true
 }
 
 populate_cni_plugins() {
@@ -480,6 +528,38 @@ populate_cni_plugins() {
     local url="https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz"
     download_tarball "$url" "$dir" 0 "bridge" "CNI plugins"
     chmod +x "$dir"/* 2>/dev/null || true
+
+    # Default CNI bridge config
+    mkdir -p "$ROOTFS_DIR/etc/cni/net.d"
+    cat > "$ROOTFS_DIR/etc/cni/net.d/10-bridge.conflist" << 'CNI'
+{
+  "cniVersion": "0.4.0",
+  "name": "default",
+  "plugins": [
+    {
+      "type": "bridge",
+      "bridge": "cni0",
+      "isDefaultGateway": true,
+      "ipMasq": true,
+      "ipam": {
+        "type": "host-local",
+        "subnet": "10.88.0.0/16",
+        "routes": [
+          { "dst": "0.0.0.0/0" }
+        ]
+      }
+    },
+    {
+      "type": "portmap",
+      "capabilities": {"portMappings": true}
+    },
+    {
+      "type": "firewall"
+    }
+  ]
+}
+CNI
+    ok "Default CNI bridge config created"
 }
 
 populate_ca_certs() {
@@ -588,6 +668,192 @@ copy_libraries() {
     fi
 
     ok "Shared libraries copied to rootfs ($(find "$ROOTFS_DIR/lib64" -type f | wc -l) files)"
+}
+
+setup_apparmor() {
+    local bin="$ROOTFS_DIR/sbin/apparmor_parser"
+    if [ -f "$bin" ]; then
+        info "apparmor_parser already exists, skipping."
+        return
+    fi
+
+    info "Setting up AppArmor userspace..."
+
+    mkdir -p "$ROOTFS_DIR/sbin"
+
+    # Try to copy from host first
+    local src=""
+    for p in /usr/sbin/apparmor_parser /sbin/apparmor_parser /usr/bin/apparmor_parser; do
+        [ -f "$p" ] && { src="$p"; break; }
+    done
+
+    if [ -n "$src" ]; then
+        cp "$src" "$bin"
+        chmod +x "$bin"
+        ok "apparmor_parser copied from host ($src)"
+    else
+        # Build from source (Fedora doesn't ship apparmor-utils)
+        info "Building apparmor_parser from source..."
+        local aa_ver="3.0.13"
+        local aa_src="/tmp/apparmor-src"
+        mkdir -p "$aa_src"
+        if wget -q --timeout=30 \
+            "https://gitlab.com/apparmor/apparmor/-/archive/v${aa_ver}/apparmor-v${aa_ver}.tar.gz" \
+            -O "$aa_src/apparmor.tar.gz" 2>/dev/null; then
+            tar xzf "$aa_src/apparmor.tar.gz" -C "$aa_src"
+            cd "$aa_src/apparmor-v${aa_ver}"
+
+            # Generate af_protos.h needed by libaalogparse
+            echo '#include <netinet/in.h>' | \
+                gcc -E -dM - | \
+                LC_ALL=C sed -n -e "/IPPROTO_MAX/d" \
+                -e "s/^#define[ \t]\+IPPROTO_\([A-Z0-9_]\+\)\(.*\)$/AA_GEN_PROTO_ENT(\UIPPROTO_\1, \"\L\1\")/p" \
+                > libraries/libapparmor/src/af_protos.h
+
+            # Build libapparmor.a manually (avoids autotools/libtool dependency)
+            local lib_src="libraries/libapparmor/src"
+            local lib_inc="libraries/libapparmor/include"
+            local CFLAGS="-O2 -fPIC -D_GNU_SOURCE -D_DEFAULT_SOURCE -I$lib_inc -I$lib_src"
+            for f in features.c kernel.c kernel_interface.c PMurHash.c private.c libaalogparse.c policy_cache.c; do
+                gcc -c $CFLAGS "$lib_src/$f" -o "/tmp/aa_build_${f%.c}.o"
+            done
+            mkdir -p "$lib_src/.libs"
+            (cd /tmp && ar rcs "$OLDPWD/$lib_src/.libs/libapparmor.a" aa_build_*.o)
+
+            # Build parser (dynamically linked — libstdc++ .a not available)
+            make -C parser -j"$(nproc)" \
+                "AARE_LDFLAGS=-L. -L../$lib_src/.libs" 2>&1 | tail -3
+            if [ -f "parser/apparmor_parser" ]; then
+                cp parser/apparmor_parser "$bin"
+                chmod +x "$bin"
+                ok "apparmor_parser built from source"
+            else
+                warn "Failed to build apparmor_parser from source. AppArmor disabled."
+                rm -f "$bin"
+            fi
+            rm -rf "$aa_src" /tmp/aa_build_*.o
+        else
+            warn "Failed to download AppArmor source. AppArmor disabled."
+        fi
+    fi
+
+    if [ ! -f "$bin" ]; then
+        warn "apparmor_parser not available. AppArmor profiles will not be loaded."
+        return
+    fi
+
+    local aad="$ROOTFS_DIR/etc/apparmor.d"
+    mkdir -p "$aad"
+
+    cat > "$aad/docker-default" << 'AAPROFILE'
+#include <tunables/global>
+
+profile docker-default flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  capability,
+  network,
+  network inet,
+  network inet6,
+  network raw,
+  mount,
+  umount,
+  pivot_root,
+
+  / r,
+  /** rwm,
+  /bin/** rix,
+  /usr/** rix,
+  /lib/** rix,
+  /opt/** rix,
+  /sbin/** rix,
+
+  /mnt/state/** rw,
+
+  deny /sys/[^f]*/** w,
+  deny /sys/firmware/** w,
+  deny /sys/kernel/security/** w,
+  deny /proc/sysrq-trigger w,
+  deny /proc/kcore r,
+  deny /proc/kmsg r,
+  deny /proc/keys r,
+}
+AAPROFILE
+    ok "Docker AppArmor profile created at $aad/docker-default"
+}
+
+setup_iptables() {
+    local bin="$ROOTFS_DIR/sbin/iptables"
+    if [ -f "$bin" ]; then
+        info "iptables already exists, skipping."
+        return
+    fi
+
+    info "Setting up iptables userspace..."
+
+    mkdir -p "$ROOTFS_DIR/sbin"
+
+    # Prefer iptables-legacy, fall back to iptables
+    local src=""
+    for p in /usr/sbin/iptables-legacy /usr/sbin/iptables /sbin/iptables-legacy /sbin/iptables; do
+        [ -f "$p" ] && { src="$p"; break; }
+    done
+
+    if [ -n "$src" ]; then
+        cp "$src" "$bin"
+        chmod +x "$bin"
+        ok "iptables copied from host ($src)"
+    else
+        warn "iptables not found on host. Container NAT may not work."
+        return
+    fi
+
+    # Symlink ip6tables if available
+    for p in /usr/sbin/ip6tables-legacy /sbin/ip6tables-legacy /usr/sbin/ip6tables /sbin/ip6tables; do
+        if [ -f "$p" ]; then
+            cp "$p" "$ROOTFS_DIR/sbin/ip6tables"
+            chmod +x "$ROOTFS_DIR/sbin/ip6tables"
+            break
+        fi
+    done
+}
+
+setup_audit() {
+    local bin="$ROOTFS_DIR/sbin/auditctl"
+    if [ -f "$bin" ]; then
+        info "auditctl already exists, skipping."
+        return
+    fi
+    local src=""
+    for p in /usr/sbin/auditctl /sbin/auditctl /usr/bin/auditctl; do
+        [ -f "$p" ] && { src="$p"; break; }
+    done
+    if [ -n "$src" ]; then
+        mkdir -p "$ROOTFS_DIR/sbin"
+        cp "$src" "$bin"
+        chmod +x "$bin"
+        ok "auditctl copied from host ($src)"
+    else
+        warn "auditctl not found on host. Audit logging will be limited."
+    fi
+}
+
+setup_cosign() {
+    local bin="$ROOTFS_DIR/usr/bin/cosign"
+    if [ -f "$bin" ]; then
+        info "cosign already exists, skipping."
+        return
+    fi
+    info "Downloading cosign for image signature verification..."
+    mkdir -p "$ROOTFS_DIR/usr/bin"
+    local url="https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
+    if wget -q --timeout=30 "$url" -O "$bin" 2>/dev/null; then
+        chmod +x "$bin"
+        ok "cosign downloaded"
+    else
+        warn "Failed to download cosign. Image verification will require manual setup."
+        rm -f "$bin"
+    fi
 }
 
 set_rootfs_perms() {
@@ -802,7 +1068,36 @@ populate_busybox
 populate_containerd
 populate_runc
 populate_nerdctl
+# Rename real binary and create wrapper for default resource limits
+if [ -f "$ROOTFS_DIR/usr/bin/nerdctl.real" ]; then
+    rm -f "$ROOTFS_DIR/usr/bin/nerdctl.real"
+fi
+if [ -f "$ROOTFS_DIR/usr/bin/nerdctl" ]; then
+    mv "$ROOTFS_DIR/usr/bin/nerdctl" "$ROOTFS_DIR/usr/bin/nerdctl.real"
+fi
+if [ ! -f "$ROOTFS_DIR/usr/bin/nerdctl" ]; then
+    cat > "$ROOTFS_DIR/usr/bin/nerdctl" << 'WRAPPER'
+#!/bin/sh
+ARGS=""; EXTRA=""; HAS_CPUS=0; HAS_MEM=0; HAS_RUN=0
+for arg in "$@"; do
+    case "$arg" in
+        --cpus=*|--cpuset-cpus=*) HAS_CPUS=1 ;;
+        --memory=*) HAS_MEM=1 ;;
+        run|create) HAS_RUN=1 ;;
+    esac
+done
+[ "$HAS_RUN" = 1 -a "$HAS_CPUS" = 0 ] && EXTRA="$EXTRA --cpus=1"
+[ "$HAS_RUN" = 1 -a "$HAS_MEM" = 0 ] && EXTRA="$EXTRA --memory=512m"
+exec /usr/bin/nerdctl.real $EXTRA "$@"
+WRAPPER
+    chmod 755 "$ROOTFS_DIR/usr/bin/nerdctl"
+    ok "nerdctl wrapper created (default: 1 CPU, 512MB RAM)"
+fi
 build_dropbear
+setup_apparmor
+setup_iptables
+setup_audit
+setup_cosign
 build_ssh_keys
 
 copy_libraries

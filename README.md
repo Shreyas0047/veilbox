@@ -70,6 +70,14 @@ Boot time: **under 15 seconds** to `veilbox login:` prompt.
 | **Auto-login** | `veilbox.autologin` kernel param for CI workflows |
 | **GRUB BIOS boot** | Full boot path for bare-metal or VirtualBox |
 | **Rootless build** | Entire build runs without sudo |
+| **Bridge networking** | CNI bridge + portmap plugins with NAT for container isolation |
+| **AppArmor MAC** | Mandatory Access Control for container process confinement |
+| **Seccomp** | Default seccomp profile applied by runc to every container |
+| **Rootless containers** | User namespace remapping via /etc/subuid and /etc/subgid |
+| **Kernel lockdown** | Lockdown LSM prevents kernel tampering (e.g. /dev/mem, kexec) |
+| **Audit logging** | Kernel auditd rules track execve, clone, and mount syscalls |
+| **Image verification** | cosign CLI for keyless/signed container image verification |
+| **Default resource limits** | nerdctl wrapper injects `--cpus=1 --memory=512m` unless overridden |
 
 ---
 
@@ -82,7 +90,97 @@ Boot time: **under 15 seconds** to `veilbox login:` prompt.
 
 ---
 
-## QEMU
+## Security
+
+### Defense in Depth
+
+Veilbox implements a layered security model — no single mechanism is relied upon.
+
+| Layer | Mechanism | Scope |
+|-------|-----------|-------|
+| **Kernel** | AppArmor LSM + seccomp + lockdown | System-wide Mandatory Access Control |
+| **Runtime** | runc applies AppArmor + seccomp | Per-container confinement |
+| **Network** | CNI bridge + iptables MASQUERADE | Container isolation & NAT |
+| **Audit** | Kernel auditd → syslog | Syscall monitoring |
+| **Supply chain** | cosign verification | Image authenticity |
+| **Resources** | nerdctl defaults (1 CPU, 512MB) | Fair scheduling |
+
+### AppArmor
+
+AppArmor confines container processes at the kernel level via an LSM. Every container started with `nerdctl` runs under the `docker-default` profile, which restricts access to sensitive filesystems (`/proc`, `/sys`) and blocks common container escape vectors.
+
+The `apparmor_parser` is built from source since Fedora does not ship `apparmor-utils`.
+
+### Seccomp
+
+The default seccomp profile is applied by containerd/runc to every container. It blocks ~50 syscalls known to be dangerous (e.g. `kexec_load`, `create_module`, `uselib`). The kernel was compiled with `CONFIG_SECCOMP_FILTER=y`.
+
+### Kernel Lockdown
+
+The lockdown LSM (`CONFIG_SECURITY_LOCKDOWN_LSM`) is compiled into the kernel. When integrity mode is active, it prevents userspace from tampering with kernel memory (`/dev/mem`), loading unsigned modules, and using kexec/kdbus.
+
+### Module Signing
+
+All kernel modules are signed during the build with an ephemeral key (`CONFIG_MODULE_SIG_FORCE=y`). Unsigned modules will not load — even by root.
+
+### Rootless Containers
+
+User namespace remapping is configured in `/etc/subuid` and `/etc/subgid` (65536 subordinate IDs for root). Containers can run with reduced privileges, mapping the container's root UID to an unprivileged host UID.
+
+### Audit Logging
+
+Kernel audit rules are set at boot via `/etc/audit/rules.d/container.rules`:
+- `execve` — track all binary executions
+- `clone` / `fork` — track process creation
+- `mount` — track filesystem mounts
+- Container breakouts trigger events logged via syslogd
+
+### Supply Chain Security
+
+`cosign` is installed in the VM for verifying container image signatures:
+
+```bash
+cosign verify --key <pubkey> <image>
+cosign verify --insecure-ignore-tlog <image>  # keyless mode
+```
+
+### Default Resource Limits
+
+The `nerdctl` binary is wrapped in a shell script that injects `--cpus=1` and `--memory=512m` on `run`/`create` commands unless the user explicitly overrides them:
+
+```bash
+# These get defaults applied
+nerdctl run nginx:alpine              # → 1 CPU, 512MB
+nerdctl run --cpus=4 nginx:alpine     # → 4 CPU, 512MB (partial override)
+nerdctl run --memory=2g nginx:alpine  # → 1 CPU, 2G (partial override)
+```
+
+### Bridge Networking
+
+Containers use a virtual bridge (`cni0`) instead of the host network namespace. The default CNI config allocates each container an IP on `10.88.0.0/16` and sets up iptables NAT for external traffic.
+
+```bash
+# Inside the VM
+nerdctl run -d --name web nginx:alpine
+nerdctl run -d --name app -p 8080:80 nginx:alpine
+```
+
+Port mapping (`-p 8080:80`) uses the CNI portmap plugin.
+
+### Secure Mount
+
+The state disk is remounted at boot with `noexec,nodev,nosuid` to prevent execution of untrusted binaries from the persistent volume.
+
+### Stack
+
+| Layer | Mechanism |
+|-------|-----------|
+| **Kernel** | AppArmor LSM + seccomp + lockdown + module signing |
+| **Runtime** | runc applies AppArmor + seccomp profiles |
+| **Container** | Process confined by MAC + seccomp + user namespace |
+| **Network** | Bridge isolation + iptables NAT + portmap |
+| **Audit** | Kernel auditd → syslog → container.rules |
+| **Resources** | nerdctl wrapper injects default --cpus / --memory |
 
 ```bash
 # Direct kernel boot (default, fastest)
@@ -250,11 +348,13 @@ MEM=2G ./test.sh
 
 | Dependency | Version | Package (Fedora) |
 |-----------|---------|------------------|
-| GCC | 16+ | `gcc` |
+| GCC | 16+ | `gcc gcc-c++` |
 | GNU Make | 4.x | `make` |
 | QEMU | 10.x | `qemu-system-x86` |
 | GRUB tools | 2.x | `grub2-tools` |
 | CPIO | 2.13+ | `cpio` |
+| Bison + Flex | 3.x / 2.6+ | `bison flex` (for AppArmor source build) |
+| iptables | 1.8+ | `iptables-legacy` |
 
 ---
 
@@ -271,7 +371,7 @@ A **152-page LaTeX technical reference** is included:
 | 6–8 | GRUB Bootloader, Initramfs, Boot Process |
 | 9–11 | QEMU Virtualization, Services, Troubleshooting |
 | 12–15 | Kernel Build System, BusyBox, Init, Containerd |
-| 16–19 | Dropbear SSH, Networking, Filesystem Layers, Security |
+| 16–19 | Dropbear SSH, Bridge Networking, AppArmor, Audit, Lockdown |
 | 20–22 | Performance Tuning, Container Workloads, Comparisons |
 | 23–24 | Tutorials, Quick Reference |
 | 25 | Appendix — Full source code listings |
@@ -297,12 +397,13 @@ veilbox/
 ├── veilbox-guide.pdf         # 152-page technical reference
 ├── kernel/
 │   └── configs/
-│       └── custom-os.config  # Kernel config fragment (111+ options)
+│       └── custom-os.config  # Kernel config (130+ security/networking options)
 ├── rootfs/                   # Initramfs source tree
 │   ├── bin/                  # Symlinks to BusyBox
-│   ├── sbin/                 # System utilities (autologin, shutdown)
-│   ├── etc/                  # Configuration (inittab, rcS, passwd, etc.)
-│   ├── opt/cni/bin/          # CNI plugins (bridge, host-local, loopback)
+│   ├── sbin/                 # System utilities, auditctl, iptables, apparmor_parser
+│   ├── etc/                  # Configuration (inittab, rcS, passwd, subuid, subgid, audit/)
+│   ├── opt/cni/bin/          # CNI plugins (bridge, host-local, loopback, portmap, firewall)
+│   ├── etc/nerdctl/          # Default nerdctl config (cgroupfs, host gateway)
 │   ├── root/                 # Root profile with colored prompt
 │   └── usr/share/udhcpc/     # DHCP client script
 ├── chapters/                 # LaTeX chapter source files (25 chapters)

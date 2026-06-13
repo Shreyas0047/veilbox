@@ -1,0 +1,12 @@
+#!/bin/sh
+ARGS=""; EXTRA=""; HAS_CPUS=0; HAS_MEM=0; HAS_RUN=0
+for arg in "$@"; do
+    case "$arg" in
+        --cpus=*|--cpuset-cpus=*) HAS_CPUS=1 ;;
+        --memory=*) HAS_MEM=1 ;;
+        run|create) HAS_RUN=1 ;;
+    esac
+done
+[ "$HAS_RUN" = 1 -a "$HAS_CPUS" = 0 ] && EXTRA="$EXTRA --cpus=1"
+[ "$HAS_RUN" = 1 -a "$HAS_MEM" = 0 ] && EXTRA="$EXTRA --memory=512m"
+exec /usr/bin/nerdctl.real $EXTRA "$@"

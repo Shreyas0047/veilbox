@@ -53,9 +53,14 @@ runc.amd64
 /rootfs/usr/bin/containerd-stress
 /rootfs/usr/bin/containerd-rootless*
 /rootfs/usr/bin/ctr
-/rootfs/usr/bin/nerdctl
+/rootfs/usr/bin/nerdctl.real
 /rootfs/usr/bin/runc
+/rootfs/usr/bin/cosign
 /rootfs/usr/sbin/dropbear
+/rootfs/sbin/apparmor_parser
+/rootfs/sbin/auditctl
+/rootfs/sbin/iptables
+/rootfs/sbin/ip6tables
 /rootfs/etc/dropbear/dropbear_*_host_key
 /rootfs/etc/dropbear/dropbear_*_host_key.pub
 /rootfs/root/.ssh/id_ed25519

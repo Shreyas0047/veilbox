@@ -1,0 +1,4 @@
+-w /usr/bin/containerd -p wa -k containerd
+-w /usr/sbin/dropbear -p wa -k dropbear
+-a exit,always -F arch=b64 -S execve -k process-exec
+-a exit,always -F arch=b32 -S execve -k process-exec

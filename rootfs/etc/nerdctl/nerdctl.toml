@@ -1,0 +1,4 @@
+# Default nerdctl settings
+namespace = "default"
+cgroup_manager = "cgroupfs"
+host_gateway_ip = "10.0.2.2"

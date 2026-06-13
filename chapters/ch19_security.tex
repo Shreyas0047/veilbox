@@ -187,6 +187,189 @@ grep "containerd" /var/log/messages
 grep "Failed" /var/log/messages
 \end{lstlisting}
 
+\section{Bridge Networking}
+
+CNI bridge networking provides network isolation for containers.
+The default configuration creates a virtual bridge \texttt{cni0} on
+\texttt{10.88.0.0/16} and uses iptables NAT for external access:
+
+\begin{lstlisting}[language=bash]
+# Inside the VM
+nerdctl run -d --name web nginx:alpine   # IP on 10.88.0.0/16
+nerdctl run -d --name app -p 8080:80 nginx:alpine  # Port-mapped
+\end{lstlisting}
+
+The \texttt{bridge} plugin creates the veth pair, \texttt{portmap}
+forwards host ports, and \texttt{firewall} isolates traffic.
+
+\subsection{Firewall Rules}
+
+A MASQUERADE rule is applied at boot to enable container outbound
+connectivity:
+
+\begin{lstlisting}
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+\end{lstlisting}
+
+\section{AppArmor}
+
+AppArmor is a Mandatory Access Control (MAC) system implemented as a
+Linux Security Module (LSM). It confines programs by loading profiles
+that specify what files, capabilities, and network operations a process
+may access.
+
+\subsection{Kernel Configuration}
+
+\begin{lstlisting}
+CONFIG_SECURITY_APPARMOR=y
+CONFIG_SECURITY_APPARMOR_BOOTPARAM_VALUE=1
+\end{lstlisting}
+
+\subsection{Default Container Profile}
+
+Every container started with \texttt{nerdctl} runs under the
+\texttt{docker-default} profile. The profile blocks access to sensitive
+kernel filesystems and container escape vectors:
+
+\begin{lstlisting}
+profile docker-default flags=(attach_disconnected,mediate_deleted) {
+  capability,
+  network,
+  mount,
+  / r,
+  /** rwm,
+  /bin/** rix,
+  /usr/** rix,
+  /lib/** rix,
+  deny /sys/[^f]*/** w,
+  deny /sys/firmware/** w,
+  deny /sys/kernel/security/** w,
+  deny /proc/sysrq-trigger w,
+  deny /proc/kcore r,
+  deny /proc/kmsg r,
+}
+\end{lstlisting}
+
+\subsection{Building from Source}
+
+Since Fedora does not ship \texttt{apparmor-utils}, \texttt{apparmor\_parser}
+is built from source during \texttt{build.sh}. The build:
+
+\begin{enumerate}[nosep]
+  \item Downloads the AppArmor v3.0.13 tarball
+  \item Generates \texttt{af\_protos.h} from kernel headers
+  \item Compiles \texttt{libapparmor.a} manually (bypasses autotools)
+  \item Builds \texttt{apparmor\_parser} linked against \texttt{libstdc++}
+\end{enumerate}
+
+\section{Kernel Lockdown}
+
+The Lockdown LSM restricts userspace access to the running kernel.
+When active, it prevents:
+
+\begin{itemize}[nosep]
+  \item Reading/writing kernel memory via \texttt{/dev/mem}
+  \item Using \texttt{kexec} to load a different kernel
+  \item Loading unsigned kernel modules (see Module Signing)
+  \item Debugging the kernel via kdbus/kgdb
+\end{itemize}
+
+\begin{lstlisting}
+CONFIG_SECURITY_LOCKDOWN_LSM=y
+CONFIG_SECURITY_LOCKDOWN_LSM_EARLY=y
+\end{lstlisting}
+
+\section{Module Signing}
+
+All kernel modules are signed during the build with an ephemeral
+key. The kernel refuses to load unsigned modules:
+
+\begin{lstlisting}
+CONFIG_MODULE_SIG=y
+CONFIG_MODULE_SIG_FORCE=y
+CONFIG_MODULE_SIG_SHA512=y
+# Key pair generated at build time
+\end{lstlisting}
+
+\section{Rootless Containers}
+
+User namespace remapping allows container root to map to an
+unprivileged host UID. The \texttt{/etc/subuid} and \texttt{/etc/subgid}
+files grant 65536 subordinate IDs:
+
+\begin{lstlisting}
+# /etc/subuid
+root:100000:65536
+
+# /etc/subgid
+root:100000:65536
+\end{lstlisting}
+
+Containers can be started with \texttt{--userns=host} for full root
+privilege, or left at the default (no remapping) for current behavior.
+
+\section{Audit Logging}
+
+Kernel audit rules are loaded at boot to track security-relevant events:
+
+\begin{lstlisting}
+# /etc/audit/rules.d/container.rules
+-w /usr/bin/nerdctl -p x -k container-manage
+-a exit,always -F arch=b64 -S execve -k exec
+-a exit,always -F arch=b64 -S clone -k process-create
+-a exit,always -F arch=b64 -S fork -k process-create
+-a exit,always -F arch=b64 -S mount -k mount
+\end{lstlisting}
+
+Events are sent to the kernel audit subsystem. Since \texttt{auditd}
+is not present, logs are captured via \texttt{syslogd}:
+
+\begin{lstlisting}[language=bash]
+grep "audit" /var/log/messages
+\end{lstlisting}
+
+\section{Supply Chain Security}
+
+\texttt{cosign} is installed at \texttt{/usr/bin/cosign} for
+verifying container image signatures:
+
+\begin{lstlisting}[language=bash]
+# Verify with a public key
+cosign verify --key cosign.pub <image>
+
+# Keyless verification (transparency log)
+cosign verify <image>
+\end{lstlisting}
+
+\section{Default Resource Limits}
+
+The \texttt{nerdctl} binary is wrapped in a shell script that injects
+default resource limits unless the user overrides them:
+
+\begin{lstlisting}[language=bash]
+# Wrapper at /usr/bin/nerdctl
+# Actual binary at /usr/bin/nerdctl.real
+\end{lstlisting}
+
+Default values: \texttt{--cpus=1} and \texttt{--memory=512m}. Override
+with explicit flags:
+
+\begin{lstlisting}[language=bash]
+nerdctl run --cpus=4 --memory=2g nginx:alpine
+\end{lstlisting}
+
+\section{Secure State Mount}
+
+The persistent state partition is remounted at boot with security
+options:
+
+\begin{lstlisting}
+mount -o remount,noexec,nodev,nosuid /mnt/state
+\end{lstlisting}
+
+This prevents execution of untrusted binaries from the persistent
+volume, even if an attacker writes files to it.
+
 \section{Network Security}
 
 \subsection{Firewall Rules}
