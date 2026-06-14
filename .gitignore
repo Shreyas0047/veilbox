@@ -48,6 +48,8 @@ runc.amd64
 # ---------------------------------------------------------------------------
 /rootfs/bin/busybox
 /rootfs/lib64/
+/rootfs/usr/lib/
+/rootfs/usr/lib64/
 /rootfs/usr/bin/containerd
 /rootfs/usr/bin/containerd-shim*
 /rootfs/usr/bin/containerd-stress

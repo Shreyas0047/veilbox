@@ -519,6 +519,8 @@ populate_runc() {
 }
 
 populate_nerdctl() {
+    # Always redownload nerdctl — the file might be our wrapper script
+    rm -f "$ROOTFS_DIR/usr/bin/nerdctl" "$ROOTFS_DIR/usr/bin/nerdctl.real"
     download_tarball "$NERDCTL_URL" "$ROOTFS_DIR/usr/bin" 0 "nerdctl" "nerdctl"
     chmod +x "$ROOTFS_DIR/usr/bin/nerdctl" 2>/dev/null || true
 }
@@ -672,69 +674,68 @@ copy_libraries() {
 
 setup_apparmor() {
     local bin="$ROOTFS_DIR/sbin/apparmor_parser"
-    if [ -f "$bin" ]; then
-        info "apparmor_parser already exists, skipping."
-        return
-    fi
-
     info "Setting up AppArmor userspace..."
 
     mkdir -p "$ROOTFS_DIR/sbin"
 
-    # Try to copy from host first
-    local src=""
-    for p in /usr/sbin/apparmor_parser /sbin/apparmor_parser /usr/bin/apparmor_parser; do
-        [ -f "$p" ] && { src="$p"; break; }
-    done
+    if [ ! -f "$bin" ]; then
+        # Try to copy from host first
+        local src=""
+        for p in /usr/sbin/apparmor_parser /sbin/apparmor_parser /usr/bin/apparmor_parser; do
+            [ -f "$p" ] && { src="$p"; break; }
+        done
 
-    if [ -n "$src" ]; then
-        cp "$src" "$bin"
-        chmod +x "$bin"
-        ok "apparmor_parser copied from host ($src)"
-    else
-        # Build from source (Fedora doesn't ship apparmor-utils)
-        info "Building apparmor_parser from source..."
-        local aa_ver="3.0.13"
-        local aa_src="/tmp/apparmor-src"
-        mkdir -p "$aa_src"
-        if wget -q --timeout=30 \
-            "https://gitlab.com/apparmor/apparmor/-/archive/v${aa_ver}/apparmor-v${aa_ver}.tar.gz" \
-            -O "$aa_src/apparmor.tar.gz" 2>/dev/null; then
-            tar xzf "$aa_src/apparmor.tar.gz" -C "$aa_src"
-            cd "$aa_src/apparmor-v${aa_ver}"
-
-            # Generate af_protos.h needed by libaalogparse
-            echo '#include <netinet/in.h>' | \
-                gcc -E -dM - | \
-                LC_ALL=C sed -n -e "/IPPROTO_MAX/d" \
-                -e "s/^#define[ \t]\+IPPROTO_\([A-Z0-9_]\+\)\(.*\)$/AA_GEN_PROTO_ENT(\UIPPROTO_\1, \"\L\1\")/p" \
-                > libraries/libapparmor/src/af_protos.h
-
-            # Build libapparmor.a manually (avoids autotools/libtool dependency)
-            local lib_src="libraries/libapparmor/src"
-            local lib_inc="libraries/libapparmor/include"
-            local CFLAGS="-O2 -fPIC -D_GNU_SOURCE -D_DEFAULT_SOURCE -I$lib_inc -I$lib_src"
-            for f in features.c kernel.c kernel_interface.c PMurHash.c private.c libaalogparse.c policy_cache.c; do
-                gcc -c $CFLAGS "$lib_src/$f" -o "/tmp/aa_build_${f%.c}.o"
-            done
-            mkdir -p "$lib_src/.libs"
-            (cd /tmp && ar rcs "$OLDPWD/$lib_src/.libs/libapparmor.a" aa_build_*.o)
-
-            # Build parser (dynamically linked — libstdc++ .a not available)
-            make -C parser -j"$(nproc)" \
-                "AARE_LDFLAGS=-L. -L../$lib_src/.libs" 2>&1 | tail -3
-            if [ -f "parser/apparmor_parser" ]; then
-                cp parser/apparmor_parser "$bin"
-                chmod +x "$bin"
-                ok "apparmor_parser built from source"
-            else
-                warn "Failed to build apparmor_parser from source. AppArmor disabled."
-                rm -f "$bin"
-            fi
-            rm -rf "$aa_src" /tmp/aa_build_*.o
+        if [ -n "$src" ]; then
+            cp "$src" "$bin"
+            chmod +x "$bin"
+            ok "apparmor_parser copied from host ($src)"
         else
-            warn "Failed to download AppArmor source. AppArmor disabled."
+            # Build from source (Fedora doesn't ship apparmor-utils)
+            info "Building apparmor_parser from source..."
+            local aa_ver="3.0.13"
+            local aa_src="/tmp/apparmor-src"
+            mkdir -p "$aa_src"
+            if wget -q --timeout=30 \
+                "https://gitlab.com/apparmor/apparmor/-/archive/v${aa_ver}/apparmor-v${aa_ver}.tar.gz" \
+                -O "$aa_src/apparmor.tar.gz" 2>/dev/null; then
+                tar xzf "$aa_src/apparmor.tar.gz" -C "$aa_src"
+                cd "$aa_src/apparmor-v${aa_ver}"
+
+                # Generate af_protos.h needed by libaalogparse
+                echo '#include <netinet/in.h>' | \
+                    gcc -E -dM - | \
+                    LC_ALL=C sed -n -e "/IPPROTO_MAX/d" \
+                    -e "s/^#define[ \t]\+IPPROTO_\([A-Z0-9_]\+\)\(.*\)$/AA_GEN_PROTO_ENT(\UIPPROTO_\1, \"\L\1\")/p" \
+                    > libraries/libapparmor/src/af_protos.h
+
+                # Build libapparmor.a manually (avoids autotools/libtool dependency)
+                local lib_src="libraries/libapparmor/src"
+                local lib_inc="libraries/libapparmor/include"
+                local CFLAGS="-O2 -fPIC -D_GNU_SOURCE -D_DEFAULT_SOURCE -I$lib_inc -I$lib_src"
+                for f in features.c kernel.c kernel_interface.c PMurHash.c private.c libaalogparse.c policy_cache.c; do
+                    gcc -c $CFLAGS "$lib_src/$f" -o "/tmp/aa_build_${f%.c}.o"
+                done
+                mkdir -p "$lib_src/.libs"
+                (cd /tmp && ar rcs "$OLDPWD/$lib_src/.libs/libapparmor.a" aa_build_*.o)
+
+                # Build parser (dynamically linked — libstdc++ .a not available)
+                make -C parser -j"$(nproc)" \
+                    "AARE_LDFLAGS=-L. -L../$lib_src/.libs" 2>&1 | tail -3
+                if [ -f "parser/apparmor_parser" ]; then
+                    cp parser/apparmor_parser "$bin"
+                    chmod +x "$bin"
+                    ok "apparmor_parser built from source"
+                else
+                    warn "Failed to build apparmor_parser from source. AppArmor disabled."
+                    rm -f "$bin"
+                fi
+                rm -rf "$aa_src" /tmp/aa_build_*.o
+            else
+                warn "Failed to download AppArmor source. AppArmor disabled."
+            fi
         fi
+    else
+        info "apparmor_parser already exists, skipping build."
     fi
 
     if [ ! -f "$bin" ]; then
@@ -746,16 +747,9 @@ setup_apparmor() {
     mkdir -p "$aad"
 
     cat > "$aad/docker-default" << 'AAPROFILE'
-#include <tunables/global>
-
 profile docker-default flags=(attach_disconnected,mediate_deleted) {
-  #include <abstractions/base>
-
   capability,
   network,
-  network inet,
-  network inet6,
-  network raw,
   mount,
   umount,
   pivot_root,
@@ -784,38 +778,63 @@ AAPROFILE
 
 setup_iptables() {
     local bin="$ROOTFS_DIR/sbin/iptables"
-    if [ -f "$bin" ]; then
-        info "iptables already exists, skipping."
-        return
-    fi
 
-    info "Setting up iptables userspace..."
+    if [ ! -f "$bin" ]; then
+        info "Setting up iptables userspace..."
 
-    mkdir -p "$ROOTFS_DIR/sbin"
+        mkdir -p "$ROOTFS_DIR/sbin"
 
-    # Prefer iptables-legacy, fall back to iptables
-    local src=""
-    for p in /usr/sbin/iptables-legacy /usr/sbin/iptables /sbin/iptables-legacy /sbin/iptables; do
-        [ -f "$p" ] && { src="$p"; break; }
-    done
+        # Prefer iptables-legacy, fall back to iptables
+        local src=""
+        for p in /usr/sbin/iptables-legacy /usr/sbin/iptables /sbin/iptables-legacy /sbin/iptables; do
+            [ -f "$p" ] && { src="$p"; break; }
+        done
 
-    if [ -n "$src" ]; then
-        cp "$src" "$bin"
-        chmod +x "$bin"
-        ok "iptables copied from host ($src)"
+        if [ -n "$src" ]; then
+            cp "$src" "$bin"
+            chmod +x "$bin"
+            ok "iptables copied from host ($src)"
+        else
+            warn "iptables not found on host. Container NAT may not work."
+            return
+        fi
+
+        # Symlink ip6tables if available
+        for p in /usr/sbin/ip6tables-legacy /sbin/ip6tables-legacy /usr/sbin/ip6tables /sbin/ip6tables; do
+            if [ -f "$p" ]; then
+                cp "$p" "$ROOTFS_DIR/sbin/ip6tables"
+                chmod +x "$ROOTFS_DIR/sbin/ip6tables"
+                break
+            fi
+        done
     else
-        warn "iptables not found on host. Container NAT may not work."
-        return
+        info "iptables already exists, skipping binary copy."
     fi
 
-    # Symlink ip6tables if available
-    for p in /usr/sbin/ip6tables-legacy /sbin/ip6tables-legacy /usr/sbin/ip6tables /sbin/ip6tables; do
-        if [ -f "$p" ]; then
-            cp "$p" "$ROOTFS_DIR/sbin/ip6tables"
-            chmod +x "$ROOTFS_DIR/sbin/ip6tables"
+    # Always copy xtables plugins (libxt_*.so) loaded via dlopen by libxtables.so
+    # This must run every build to ensure rootfs has the latest plugins
+    local xt_dirs=("/usr/lib64/xtables" "/usr/lib/xtables")
+    local xt_dir=""
+    for d in "${xt_dirs[@]}"; do
+        if [ -d "$d" ]; then
+            xt_dir="$d"
             break
         fi
     done
+    if [ -n "$xt_dir" ]; then
+        # Copy to both lib and lib64 to match whatever the iptables binary expects
+        local xt_targets=("$ROOTFS_DIR/usr/lib/xtables" "$ROOTFS_DIR/usr/lib64/xtables")
+        local t
+        for t in "${xt_targets[@]}"; do
+            mkdir -p "$t"
+            cp -L "$xt_dir"/libxt_*.so "$t/" 2>/dev/null || true
+        done
+        local count
+        count=$(ls "$ROOTFS_DIR/usr/lib/xtables/"libxt_*.so 2>/dev/null | wc -l)
+        info "Copied $count xtables plugins from $xt_dir"
+    else
+        warn "xtables plugins directory not found on host"
+    fi
 }
 
 setup_audit() {
@@ -1078,17 +1097,30 @@ fi
 if [ ! -f "$ROOTFS_DIR/usr/bin/nerdctl" ]; then
     cat > "$ROOTFS_DIR/usr/bin/nerdctl" << 'WRAPPER'
 #!/bin/sh
-ARGS=""; EXTRA=""; HAS_CPUS=0; HAS_MEM=0; HAS_RUN=0
+EXTRA=""; HAS_CPUS=0; HAS_MEM=0; SEEN=0
+# Scan args for overrides and subcommand
 for arg in "$@"; do
     case "$arg" in
         --cpus=*|--cpuset-cpus=*) HAS_CPUS=1 ;;
-        --memory=*) HAS_MEM=1 ;;
-        run|create) HAS_RUN=1 ;;
+        --memory=*|-m) HAS_MEM=1 ;;
+        run|create) SEEN=1 ;;
     esac
 done
-[ "$HAS_RUN" = 1 -a "$HAS_CPUS" = 0 ] && EXTRA="$EXTRA --cpus=1"
-[ "$HAS_RUN" = 1 -a "$HAS_MEM" = 0 ] && EXTRA="$EXTRA --memory=512m"
-exec /usr/bin/nerdctl.real $EXTRA "$@"
+# Build extra flags to inject after subcommand
+if [ "$SEEN" = 1 ]; then
+    [ "$HAS_CPUS" = 0 ] && EXTRA="--cpus=1"
+    [ "$HAS_MEM" = 0 ] && EXTRA="$EXTRA --memory=512m"
+fi
+OUT=""; INSERTED=0
+for arg in "$@"; do
+    if [ "$INSERTED" = 0 ] && [ "$arg" = "run" ] || [ "$INSERTED" = 0 ] && [ "$arg" = "create" ]; then
+        OUT="$OUT $arg $EXTRA"
+        INSERTED=1
+    else
+        OUT="$OUT $arg"
+    fi
+done
+exec /usr/bin/nerdctl.real $OUT
 WRAPPER
     chmod 755 "$ROOTFS_DIR/usr/bin/nerdctl"
     ok "nerdctl wrapper created (default: 1 CPU, 512MB RAM)"

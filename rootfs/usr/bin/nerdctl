@@ -1,12 +1,25 @@
 #!/bin/sh
-ARGS=""; EXTRA=""; HAS_CPUS=0; HAS_MEM=0; HAS_RUN=0
+EXTRA=""; HAS_CPUS=0; HAS_MEM=0; SEEN=0
+# Scan args for overrides and subcommand
 for arg in "$@"; do
     case "$arg" in
         --cpus=*|--cpuset-cpus=*) HAS_CPUS=1 ;;
-        --memory=*) HAS_MEM=1 ;;
-        run|create) HAS_RUN=1 ;;
+        --memory=*|-m) HAS_MEM=1 ;;
+        run|create) SEEN=1 ;;
     esac
 done
-[ "$HAS_RUN" = 1 -a "$HAS_CPUS" = 0 ] && EXTRA="$EXTRA --cpus=1"
-[ "$HAS_RUN" = 1 -a "$HAS_MEM" = 0 ] && EXTRA="$EXTRA --memory=512m"
-exec /usr/bin/nerdctl.real $EXTRA "$@"
+# Build extra flags to inject after subcommand
+if [ "$SEEN" = 1 ]; then
+    [ "$HAS_CPUS" = 0 ] && EXTRA="--cpus=1"
+    [ "$HAS_MEM" = 0 ] && EXTRA="$EXTRA --memory=512m"
+fi
+OUT=""; INSERTED=0
+for arg in "$@"; do
+    if [ "$INSERTED" = 0 ] && [ "$arg" = "run" ] || [ "$INSERTED" = 0 ] && [ "$arg" = "create" ]; then
+        OUT="$OUT $arg $EXTRA"
+        INSERTED=1
+    else
+        OUT="$OUT $arg"
+    fi
+done
+exec /usr/bin/nerdctl.real $OUT

@@ -1,0 +1,25 @@
+profile docker-default flags=(attach_disconnected,mediate_deleted) {
+  capability,
+  network,
+  mount,
+  umount,
+  pivot_root,
+
+  / r,
+  /** rwm,
+  /bin/** rix,
+  /usr/** rix,
+  /lib/** rix,
+  /opt/** rix,
+  /sbin/** rix,
+
+  /mnt/state/** rw,
+
+  deny /sys/[^f]*/** w,
+  deny /sys/firmware/** w,
+  deny /sys/kernel/security/** w,
+  deny /proc/sysrq-trigger w,
+  deny /proc/kcore r,
+  deny /proc/kmsg r,
+  deny /proc/keys r,
+}
