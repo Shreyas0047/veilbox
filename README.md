@@ -78,6 +78,13 @@ Boot time: **under 15 seconds** to `veilbox login:` prompt.
 | **Audit logging** | Kernel auditd rules track execve, clone, and mount syscalls |
 | **Image verification** | cosign CLI for keyless/signed container image verification |
 | **Default resource limits** | nerdctl wrapper injects `--cpus=1 --memory=512m` unless overridden |
+| **Kernel hardening** | FORTIFY_SOURCE, YAMA, ASLR entropy increase, DEVMEM/KEXEC/HIBERNATION/PROC_KCORE disabled |
+| **Host firewall** | iptables default DROP on INPUT/FORWARD, allow SSH + established |
+| **Registry mirror** | containerd configured with docker.io mirror (mirror.gcr.io fallback) |
+| **eBPF tracing** | bpftool-based execve tracer logs to syslog (trace-exec.sh) |
+| **Health endpoint** | Unix socket HTTP health endpoint at /var/run/health.sock |
+| **AppArmor daemon profiles** | Confined profiles for dropbear and containerd daemons |
+| **Log rotation** | syslogd capped at 64KB circular buffer via `-s 65536` |
 
 ---
 
@@ -98,18 +105,21 @@ Veilbox implements a layered security model — no single mechanism is relied up
 
 | Layer | Mechanism | Scope |
 |-------|-----------|-------|
-| **Kernel** | AppArmor LSM + seccomp + lockdown | System-wide Mandatory Access Control |
+| **Kernel** | AppArmor LSM + seccomp + lockdown + FORTIFY_SOURCE + YAMA | System-wide Mandatory Access Control + hardening |
 | **Runtime** | runc applies AppArmor + seccomp | Per-container confinement |
-| **Network** | CNI bridge + iptables MASQUERADE | Container isolation & NAT |
+| **Network** | CNI bridge + iptables MASQUERADE + host firewall (DROP default) | Container isolation & NAT |
 | **Audit** | Kernel auditd → syslog | Syscall monitoring |
 | **Supply chain** | cosign verification | Image authenticity |
 | **Resources** | nerdctl defaults (1 CPU, 512MB) | Fair scheduling |
+| **Services** | AppArmor profiles for dropbear + containerd daemons | Service confinement |
 
 ### AppArmor
 
 AppArmor confines container processes at the kernel level via an LSM. Every container started with `nerdctl` runs under the `docker-default` profile, which restricts access to sensitive filesystems (`/proc`, `/sys`) and blocks common container escape vectors.
 
 The `apparmor_parser` is built from source since Fedora does not ship `apparmor-utils`.
+
+Daemon profiles are also loaded at boot for Dropbear (`usr.sbin.dropbear`) and containerd (`usr.bin.containerd`), confining SSH and container runtime processes respectively.
 
 ### Seccomp
 
@@ -402,10 +412,16 @@ veilbox/
 │   ├── bin/                  # Symlinks to BusyBox
 │   ├── sbin/                 # System utilities, auditctl, iptables, apparmor_parser
 │   ├── etc/                  # Configuration (inittab, rcS, passwd, subuid, subgid, audit/)
+│   │   ├── apparmor.d/       # AppArmor profiles (docker-default, usr.sbin.dropbear, usr.bin.containerd)
+│   │   ├── containerd/       # containerd config (registry mirror, SystemdCgroup=false)
+│   │   └── nerdctl/          # nerdctl config (cgroupfs, pull_mode)
 │   ├── opt/cni/bin/          # CNI plugins (bridge, host-local, loopback, portmap, firewall)
-│   ├── etc/nerdctl/          # Default nerdctl config (cgroupfs, host gateway)
 │   ├── root/                 # Root profile with colored prompt
-│   └── usr/share/udhcpc/     # DHCP client script
+│   └── usr/
+│       ├── bin/
+│       │   ├── trace-exec.sh # eBPF execve tracer (logs to syslog)
+│       │   └── health.sh     # Unix socket HTTP health endpoint
+│       └── share/udhcpc/     # DHCP client script
 ├── chapters/                 # LaTeX chapter source files (25 chapters)
 ├── output/                   # Build artifacts (LFS tracked)
 │   ├── vmlinuz               # Pre-built kernel (~73 MB)

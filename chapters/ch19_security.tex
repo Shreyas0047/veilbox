@@ -21,12 +21,32 @@ The kernel is configured without unnecessary subsystems:
   \item No PCMCIA, FireWire, InfiniBand, or ISDN.
 \end{itemize}
 
+\subsection{Kernel Hardening}
+
+The kernel is hardened with compile-time protections and attack surface reduction:
+
+\begin{lstlisting}
+CONFIG_FORTIFY_SOURCE=y        # Buffer overflow detection
+CONFIG_SECURITY_YAMA=y         # Ptrace scope restrictions
+CONFIG_DEVMEM=n                # Disable /dev/mem access
+CONFIG_KEXEC=n                 # Disable kernel exec
+CONFIG_HIBERNATION=n           # Disable suspend-to-disk
+CONFIG_PROC_KCORE=n            # Disable /proc/kcore
+CONFIG_DEBUG_FS_ALLOW_NONE=y   # Block debugfs mounts at runtime
+\end{lstlisting}
+
+ASLR entropy is increased at boot via sysctl:
+\begin{lstlisting}
+echo 32 > /proc/sys/vm/mmap_rnd_bits
+\end{lstlisting}
+
 \subsection{Mandatory Security Options}
 
 \begin{lstlisting}
 CONFIG_SECCOMP=y           # Syscall filtering
 CONFIG_SECCOMP_FILTER=y    # BPF-based filters
 CONFIG_SECURITY=y          # Security framework
+CONFIG_SECURITY_APPARMOR=y # AppArmor LSM
 CONFIG_SECURITY_YAMA=y     # Ptrace scope restrictions
 CONFIG_DEFAULT_SECURITY_YAMA=y
 CONFIG_SECURITY_NETWORK=y  # Network security hooks
@@ -211,6 +231,48 @@ connectivity:
 iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 \end{lstlisting}
 
+\section{eBPF Tracing}
+
+The \texttt{bpftool} utility is built from the kernel tree and installed
+at \texttt{/usr/bin/bpftool}. A minimal execve tracer
+(\texttt{trace-exec.sh}) logs process executions to syslog:
+
+\begin{lstlisting}[language=bash]
+# Start tracer
+trace-exec.sh start
+
+# View exec events
+grep "bpf-exec" /var/log/messages
+\end{lstlisting}
+
+\section{Health Endpoint}
+
+A Unix socket HTTP health endpoint runs at \texttt{/var/run/health.sock}.
+It returns JSON status on connect:
+
+\begin{lstlisting}[language=bash]
+# Query health
+echo "GET /" | nc -U /var/run/health.sock
+
+# Response:
+{"status":"ok","uptime":42}
+\end{lstlisting}
+
+The endpoint is used for system monitoring and orchestration health
+checks.
+
+\section{Registry Mirror}
+
+containerd is configured with a registry mirror for docker.io to improve
+pull reliability and speed:
+
+\begin{lstlisting}
+[plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+  endpoint = ["https://docker.io", "https://mirror.gcr.io"]
+\end{lstlisting}
+
+This also reduces pressure on Docker Hub rate limits.
+
 \section{AppArmor}
 
 AppArmor is a Mandatory Access Control (MAC) system implemented as a
@@ -247,6 +309,40 @@ profile docker-default flags=(attach_disconnected,mediate_deleted) {
   deny /proc/sysrq-trigger w,
   deny /proc/kcore r,
   deny /proc/kmsg r,
+}
+\end{lstlisting}
+
+\subsection{Daemon Profiles}
+
+In addition to the container profile, AppArmor confines system daemons:
+
+\textbf{Dropbear (usr.sbin.dropbear)} -- restricts SSH daemon to key
+files, log writes, and network access:
+
+\begin{lstlisting}
+profile usr.sbin.dropbear /usr/sbin/dropbear {
+  capability net_bind_service,
+  capability sys_tty_config,
+  /etc/dropbear/** r,
+  /root/.ssh/authorized_keys r,
+  /var/log/messages w,
+  network tcp,
+}
+\end{lstlisting}
+
+\textbf{Containerd (usr.bin.containerd)} -- confines the container
+runtime to state directories, cgroup access, and mount operations:
+
+\begin{lstlisting}
+profile usr.bin.containerd /usr/bin/containerd {
+  capability,
+  /mnt/state/** rw,
+  /run/containerd/** rw,
+  /sys/fs/cgroup/** rw,
+  mount fstype=overlay,
+  mount fstype=tmpfs,
+  ptrace (read, trace),
+  signal (send, receive) set=(kill, term),
 }
 \end{lstlisting}
 
@@ -372,9 +468,9 @@ volume, even if an attacker writes files to it.
 
 \section{Network Security}
 
-\subsection{Firewall Rules}
+\subsection{Host Firewall Rules}
 
-Basic iptables rules for container isolation:
+Iptables rules applied at boot for container isolation:
 
 \begin{lstlisting}
 # Default: drop incoming, allow outgoing
@@ -386,7 +482,7 @@ iptables -P OUTPUT ACCEPT
 iptables -A INPUT -i lo -j ACCEPT
 
 # Allow established connections
-iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
 # Allow SSH
 iptables -A INPUT -p tcp --dport 22 -j ACCEPT
@@ -394,3 +490,6 @@ iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 # Allow container traffic to external
 iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 \end{lstlisting}
+
+CNI bridge plugin appends its own FORWARD rules for container traffic
+(\texttt{-A FORWARD -i cni0 -j ACCEPT}).

@@ -15,7 +15,7 @@ if [ "$SEEN" = 1 ]; then
 fi
 OUT=""; INSERTED=0
 for arg in "$@"; do
-    if [ "$INSERTED" = 0 ] && [ "$arg" = "run" ] || [ "$INSERTED" = 0 ] && [ "$arg" = "create" ]; then
+    if [ "$INSERTED" = 0 ] && { [ "$arg" = "run" ] || [ "$arg" = "create" ]; }; then
         OUT="$OUT $arg $EXTRA"
         INSERTED=1
     else

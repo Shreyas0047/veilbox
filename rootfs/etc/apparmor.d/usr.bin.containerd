@@ -1,0 +1,44 @@
+# AppArmor profile for containerd daemon
+# Confines container runtime to state dir, cgroup access, and network
+#include <tunables/global>
+
+profile usr.bin.containerd /usr/bin/containerd flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+
+  capability,
+  network,
+  mount,
+
+  / r,
+  /** r,
+  /mnt/state/** rw,
+  /var/log/containerd.log w,
+  /run/ rw,
+  /run/containerd/** rw,
+  /run/runc/** rw,
+  /sys/fs/cgroup/** rw,
+  /opt/cni/bin/** rix,
+  /usr/bin/containerd mr,
+  /usr/bin/runc mr,
+  /usr/bin/nerdctl.real mr,
+  /etc/containerd/** r,
+  /etc/cni/** r,
+  /etc/ssl/** r,
+  /tmp/** rw,
+
+  # Allow mounting filesystems for containers
+  mount fstype=overlay,
+  mount fstype=tmpfs,
+  mount fstype=proc,
+  mount fstype=sysfs,
+  mount fstype=devpts,
+  mount fstype=mqueue,
+  mount fstype=fuse.*,
+
+  # Ptrace for container process monitoring
+  ptrace (read, trace),
+
+  # Signal for container process management
+  signal (send, receive) set=(kill, term, cont, stop),
+}

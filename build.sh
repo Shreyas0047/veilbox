@@ -14,7 +14,8 @@ BUSYBOX_VERSION="1.35.0"
 CONTAINERD_VERSION="1.7.13"
 RUNC_VERSION="1.1.12"
 NERDCTL_VERSION="1.7.5"
-DROPBEAR_VERSION="2025.89"
+DROPBEAR_VERSION="2024.85"
+COSIGN_VERSION="2.2.4"
 
 BUSYBOX_URL="https://busybox.net/downloads/binaries/${BUSYBOX_VERSION}-x86_64-linux-musl/busybox"
 CONTAINERD_URL="https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz"
@@ -74,7 +75,7 @@ install_deps() {
                     gcc make flex bison openssl-devel \
                     elfutils-libelf-devel ncurses-devel bc rsync \
                     xz bzip2 grub2-tools grub2-pc-modules \
-                    apparmor-utils iptables-legacy nftables 2>&1 | tail -3
+                    dwarves apparmor-utils iptables-legacy nftables 2>&1 | tail -3
                 ok "Fedora packages installed"
             else
                 warn "Sudo requires a password — skipping automated package install."
@@ -266,6 +267,8 @@ strip_kernel_config() {
     "$script" --disable WATCHDOG
     "$script" --disable ATA
     "$script" --disable SCSI
+    "$script" --disable BLK_DEV_IO_TRACE
+    "$script" --disable EDAC
 
     "$script" --refresh
 
@@ -302,6 +305,21 @@ build_kernel() {
     make -j"$jobs" CROSS_COMPILE="$CROSS_COMPILE"
     cp arch/x86/bzImage "$OUTPUT_DIR/vmlinuz" 2>/dev/null || cp arch/x86/boot/bzImage "$OUTPUT_DIR/vmlinuz"
     ok "Kernel built: $OUTPUT_DIR/vmlinuz (${jobs} parallel jobs)"
+
+    # Build bpftool from kernel tree for eBPF tracing
+    if [ ! -f "$ROOTFS_DIR/usr/bin/bpftool" ]; then
+        info "Building bpftool for eBPF tracing..."
+        make -j"$jobs" -C tools/bpf/bpftool CROSS_COMPILE="$CROSS_COMPILE" >/dev/null 2>&1 || true
+        local bpftool_src="tools/bpf/bpftool/bpftool"
+        if [ -f "$bpftool_src" ]; then
+            cp "$bpftool_src" "$ROOTFS_DIR/usr/bin/bpftool"
+            ok "bpftool built and installed"
+        else
+            warn "bpftool build failed, eBPF tracing unavailable"
+        fi
+    else
+        info "bpftool already exists, skipping."
+    fi
 }
 
 setup_rootfs_dirs() {
@@ -357,6 +375,8 @@ ip link set eth0 up 2>/dev/null || true
 
 # Kernel networking tweaks for containers
 sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+# Increase ASLR entropy for mmap base
+echo 32 > /proc/sys/vm/mmap_rnd_bits 2>/dev/null || true
 modprobe br_netfilter 2>/dev/null || true
 sysctl -w net.bridge.bridge-nf-call-iptables=1 >/dev/null 2>&1 || true
 sysctl -w net.bridge.bridge-nf-call-ip6tables=1 >/dev/null 2>&1 || true
@@ -364,6 +384,14 @@ sysctl -w net.bridge.bridge-nf-call-ip6tables=1 >/dev/null 2>&1 || true
 # Security subsystems
 mount -t securityfs none /sys/kernel/security 2>/dev/null || true
 apparmor_parser -r /etc/apparmor.d/ 2>/dev/null || true
+
+# Host firewall: drop incoming, allow established + SSH
+/sbin/iptables -P INPUT DROP 2>/dev/null || true
+/sbin/iptables -P FORWARD DROP 2>/dev/null || true
+/sbin/iptables -P OUTPUT ACCEPT 2>/dev/null || true
+/sbin/iptables -A INPUT -i lo -j ACCEPT 2>/dev/null || true
+/sbin/iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
+/sbin/iptables -A INPUT -p tcp --dport 22 -j ACCEPT 2>/dev/null || true
 
 # Audit rules for container security events
 auditctl -e 1 2>/dev/null || true
@@ -373,15 +401,22 @@ auditctl -a exit,always -F arch=b64 -S clone,clone3 -k container-clone 2>/dev/nu
 # NAT for external traffic from containers
 /sbin/iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || true
 
-echo "nameserver 10.0.2.3" > /etc/resolv.conf
+# DHCP configures resolv.conf via /usr/share/udhcpc/default.script
 /sbin/udhcpc -i eth0 -b -q >/dev/null 2>&1 &
 
-/sbin/syslogd -n &
+# syslogd with 64KB circular buffer to prevent log growth on state disk
+/sbin/syslogd -s 65536 -n &
 
-mkdir -p /var/run /var/log
+mkdir -p /var/run /var/log /mnt/state/log
 
 /usr/bin/containerd --config /etc/containerd/config.toml >/var/log/containerd.log 2>&1 &
 /usr/sbin/dropbear -R -p 22
+
+# Start health endpoint (Unix socket HTTP health check)
+/usr/bin/health.sh /var/run/health.sock &
+
+# Start minimal eBPF execve tracer (logs to syslog via logger)
+/usr/bin/trace-exec.sh start
 EOF
     chmod 755 "$ROOTFS_DIR/etc/init.d/rcS"
 
@@ -418,6 +453,13 @@ case "$1" in
         ip addr add $ip/${subnet:-24} dev $interface 2>/dev/null || true
         ip route del default 2>/dev/null || true
         [ -n "$router" ] && ip route add default via $router dev $interface 2>/dev/null || true
+        # Write DNS servers from DHCP lease
+        if [ -n "$dns" ]; then
+            : > /etc/resolv.conf
+            for ns in $dns; do
+                echo "nameserver $ns" >> /etc/resolv.conf
+            done
+        fi
         ;;
 esac
 exit 0
@@ -491,7 +533,7 @@ NERDCTL
 populate_busybox() {
     download_binary "$ROOTFS_DIR/bin/busybox" "$BUSYBOX_URL" "/usr/bin/busybox" "BusyBox"
 
-    for applet in init mount umount reboot poweroff modprobe getty ip hostname syslogd kill mkdir ln cat echo ls ps sh sleep head grep pidof udhcpc ifconfig nc netstat df tail wc uname login passwd wget; do
+    for applet in init mount umount reboot poweroff modprobe getty ip hostname syslogd kill mkdir ln cat echo ls ps sh sleep head grep pidof udhcpc ifconfig nc netstat df tail wc uname login passwd wget rm chmod; do
         ln -sf /bin/busybox "$ROOTFS_DIR/sbin/$applet"
     done
     ln -sf /bin/busybox "$ROOTFS_DIR/bin/sh"
@@ -719,8 +761,10 @@ setup_apparmor() {
                 (cd /tmp && ar rcs "$OLDPWD/$lib_src/.libs/libapparmor.a" aa_build_*.o)
 
                 # Build parser (dynamically linked — libstdc++ .a not available)
+                # pod2html may not be installed; skip HTML doc generation
                 make -C parser -j"$(nproc)" \
-                    "AARE_LDFLAGS=-L. -L../$lib_src/.libs" 2>&1 | tail -3
+                    "AARE_LDFLAGS=-L. -L../$lib_src/.libs" \
+                    "POD2HTML=true" 2>&1 | tail -3
                 if [ -f "parser/apparmor_parser" ]; then
                     cp parser/apparmor_parser "$bin"
                     chmod +x "$bin"
@@ -729,6 +773,7 @@ setup_apparmor() {
                     warn "Failed to build apparmor_parser from source. AppArmor disabled."
                     rm -f "$bin"
                 fi
+                cd /
                 rm -rf "$aa_src" /tmp/aa_build_*.o
             else
                 warn "Failed to download AppArmor source. AppArmor disabled."
@@ -865,7 +910,7 @@ setup_cosign() {
     fi
     info "Downloading cosign for image signature verification..."
     mkdir -p "$ROOTFS_DIR/usr/bin"
-    local url="https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
+    local url="https://github.com/sigstore/cosign/releases/download/v${COSIGN_VERSION}/cosign-linux-amd64"
     if wget -q --timeout=30 "$url" -O "$bin" 2>/dev/null; then
         chmod +x "$bin"
         ok "cosign downloaded"
@@ -879,6 +924,8 @@ set_rootfs_perms() {
     chmod 755 "$ROOTFS_DIR/etc/init.d/rcS" 2>/dev/null || true
     chmod 700 "$ROOTFS_DIR/root" 2>/dev/null || true
     chmod 1777 "$ROOTFS_DIR/tmp" 2>/dev/null || true
+    chmod 755 "$ROOTFS_DIR/usr/bin/trace-exec.sh" 2>/dev/null || true
+    chmod 755 "$ROOTFS_DIR/usr/bin/health.sh" 2>/dev/null || true
 }
 
 create_state_img() {
@@ -1113,7 +1160,7 @@ if [ "$SEEN" = 1 ]; then
 fi
 OUT=""; INSERTED=0
 for arg in "$@"; do
-    if [ "$INSERTED" = 0 ] && [ "$arg" = "run" ] || [ "$INSERTED" = 0 ] && [ "$arg" = "create" ]; then
+    if [ "$INSERTED" = 0 ] && { [ "$arg" = "run" ] || [ "$arg" = "create" ]; }; then
         OUT="$OUT $arg $EXTRA"
         INSERTED=1
     else

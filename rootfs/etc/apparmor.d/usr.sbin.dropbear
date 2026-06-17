@@ -1,0 +1,42 @@
+# AppArmor profile for Dropbear SSH daemon
+# Confines SSH access to read host keys, write logs, bind port 22
+#include <tunables/global>
+
+profile usr.sbin.dropbear /usr/sbin/dropbear flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+
+  capability net_bind_service,
+  capability sys_tty_config,
+  capability chown,
+  capability dac_override,
+  capability dac_read_search,
+  capability setgid,
+  capability setuid,
+  capability audit_write,
+
+  / r,
+  /etc/ r,
+  /etc/dropbear/** r,
+  /etc/hostname r,
+  /etc/passwd r,
+  /etc/shadow r,
+  /etc/group r,
+  /dev/ r,
+  /dev/log w,
+  /dev/pts/** rw,
+  /dev/tty* rw,
+  /proc/ r,
+  /proc/** r,
+  /usr/sbin/dropbear mr,
+  /var/log/messages w,
+  /var/run/ w,
+  /var/run/dropbear.pid rw,
+  /root/ r,
+  /root/.ssh/ r,
+  /root/.ssh/authorized_keys r,
+  /tmp/ rw,
+
+  network tcp,
+  network udp,
+}
