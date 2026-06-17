@@ -29,6 +29,13 @@ modprobe br_netfilter 2>/dev/null || true
 sysctl -w net.bridge.bridge-nf-call-iptables=1 >/dev/null 2>&1 || true
 sysctl -w net.bridge.bridge-nf-call-ip6tables=1 >/dev/null 2>&1 || true
 
+# Kernel hardening sysctls
+sysctl -w kernel.kptr_restrict=2 >/dev/null 2>&1 || true
+sysctl -w kernel.dmesg_restrict=1 >/dev/null 2>&1 || true
+sysctl -w net.ipv4.conf.all.rp_filter=1 >/dev/null 2>&1 || true
+sysctl -w net.ipv4.conf.all.accept_source_route=0 >/dev/null 2>&1 || true
+sysctl -w net.ipv4.tcp_syncookies=1 >/dev/null 2>&1 || true
+
 # Security subsystems
 mount -t securityfs none /sys/kernel/security 2>/dev/null || true
 apparmor_parser -r /etc/apparmor.d/ 2>/dev/null || true

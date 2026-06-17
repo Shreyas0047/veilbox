@@ -40,6 +40,15 @@ ASLR entropy is increased at boot via sysctl:
 echo 32 > /proc/sys/vm/mmap_rnd_bits
 \end{lstlisting}
 
+Additional runtime kernel hardening is applied at boot:
+\begin{lstlisting}
+sysctl -w kernel.kptr_restrict=2        # Hide kernel pointers
+sysctl -w kernel.dmesg_restrict=1      # Restrict dmesg to root
+sysctl -w net.ipv4.conf.all.rp_filter=1 # Reverse path filtering
+sysctl -w net.ipv4.conf.all.accept_source_route=0 # Disable source routing
+sysctl -w net.ipv4.tcp_syncookies=1    # SYN flood protection
+\end{lstlisting}
+
 \subsection{Mandatory Security Options}
 
 \begin{lstlisting}

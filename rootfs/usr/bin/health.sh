@@ -10,8 +10,9 @@ rm -f "$SOCKET"
 
 # Parse uptime from /proc/uptime
 uptime_seconds() {
-    read -r sec _ < /proc/uptime 2>/dev/null || echo 0
-    printf "%.0f" "${sec:-0}"
+    read -r sec _ < /proc/uptime 2>/dev/null
+    sec="${sec:-0}"
+    printf "%.0f" "$sec"
 }
 
 # HTTP response helper

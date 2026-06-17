@@ -129,6 +129,19 @@ The default seccomp profile is applied by containerd/runc to every container. It
 
 The lockdown LSM (`CONFIG_SECURITY_LOCKDOWN_LSM`) is compiled into the kernel. When integrity mode is active, it prevents userspace from tampering with kernel memory (`/dev/mem`), loading unsigned modules, and using kexec/kdbus.
 
+### Runtime Kernel Hardening
+
+Kernel sysctls are applied at boot via rcS:
+
+| Sysctl | Value | Purpose |
+|--------|-------|---------|
+| `kernel.kptr_restrict` | 2 | Hide kernel pointers from unprivileged users |
+| `kernel.dmesg_restrict` | 1 | Restrict dmesg output to root (CAP\_SYSLOG) |
+| `net.ipv4.conf.all.rp_filter` | 1 | Reverse path filtering (anti-spoofing) |
+| `net.ipv4.conf.all.accept\_source\_route` | 0 | Disable source-routed packets |
+| `net.ipv4.tcp\_syncookies` | 1 | SYN flood protection |
+| `vm.mmap\_rnd\_bits` | 32 | Maximum ASLR entropy for mmap base |
+
 ### Module Signing
 
 All kernel modules are signed during the build with an ephemeral key (`CONFIG_MODULE_SIG_FORCE=y`). Unsigned modules will not load — even by root.

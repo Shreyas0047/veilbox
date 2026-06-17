@@ -381,6 +381,13 @@ modprobe br_netfilter 2>/dev/null || true
 sysctl -w net.bridge.bridge-nf-call-iptables=1 >/dev/null 2>&1 || true
 sysctl -w net.bridge.bridge-nf-call-ip6tables=1 >/dev/null 2>&1 || true
 
+# Kernel hardening sysctls
+sysctl -w kernel.kptr_restrict=2 >/dev/null 2>&1 || true
+sysctl -w kernel.dmesg_restrict=1 >/dev/null 2>&1 || true
+sysctl -w net.ipv4.conf.all.rp_filter=1 >/dev/null 2>&1 || true
+sysctl -w net.ipv4.conf.all.accept_source_route=0 >/dev/null 2>&1 || true
+sysctl -w net.ipv4.tcp_syncookies=1 >/dev/null 2>&1 || true
+
 # Security subsystems
 mount -t securityfs none /sys/kernel/security 2>/dev/null || true
 apparmor_parser -r /etc/apparmor.d/ 2>/dev/null || true
@@ -432,27 +439,19 @@ disabled_plugins = ["cri"]
 
 [metrics]
   address = ""
-
-[plugins]
-  [plugins."io.containerd.grpc.v1.cri".containerd]
-    default_runtime_name = "runc"
-    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-      runtime_type = "io.containerd.runc.v2"
-      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-        SystemdCgroup = true
 EOF
 
     cat > "$ROOTFS_DIR/usr/share/udhcpc/default.script" << 'SCRIPT'
 #!/bin/sh
 case "$1" in
     deconfig)
-        ip addr flush dev $interface 2>/dev/null || true
+        ip addr flush dev "$interface" 2>/dev/null || true
         ip route del default 2>/dev/null || true
         ;;
     bound|renew)
-        ip addr add $ip/${subnet:-24} dev $interface 2>/dev/null || true
+        ip addr add "$ip/${subnet:-24}" dev "$interface" 2>/dev/null || true
         ip route del default 2>/dev/null || true
-        [ -n "$router" ] && ip route add default via $router dev $interface 2>/dev/null || true
+        [ -n "$router" ] && ip route add default via "$router" dev "$interface" 2>/dev/null || true
         # Write DNS servers from DHCP lease
         if [ -n "$dns" ]; then
             : > /etc/resolv.conf
