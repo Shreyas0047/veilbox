@@ -502,3 +502,67 @@ iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 
 CNI bridge plugin appends its own FORWARD rules for container traffic
 (\texttt{-A FORWARD -i cni0 -j ACCEPT}).
+
+\section{LUKS State Encryption}
+
+The persistent state disk (\texttt{state.img}) is encrypted with
+LUKS (dm-crypt) during the build pipeline. A random 32-byte key is
+generated and stored in the initramfs at \texttt{/etc/state.key}
+(root-only, mode 400). At boot, the keyfile is used to automatically
+unlock the state disk.
+
+\subsection{Security Model}
+
+The state data (containerd state, logs, container volumes) is
+encrypted at rest on disk:
+
+\begin{itemize}[nosep]
+  \item An attacker who steals only the disk image (\texttt{state.img}
+        or \texttt{state-persist.img}) cannot decrypt the state data
+        without also having the kernel binary (\texttt{vmlinuz}) which
+        contains the embedded initramfs with the keyfile.
+  \item On each build, a new random key is generated, invalidating any
+        previously encrypted state images.
+  \item The kernel includes \texttt{CONFIG\_DM\_CRYPT=y} and the
+        necessary crypto primitives (AES-XTS, SHA-256) for full-disk
+        encryption.
+\end{itemize}
+
+\subsection{Usage}
+
+\begin{lstlisting}[language=bash]
+./test.sh --keep-state
+# LUKS state disk is auto-unlocked at boot via /etc/state.key
+\end{lstlisting}
+
+If \texttt{cryptsetup} is not available on the build host, the state
+image falls back to a plain ext4 filesystem (backward compatible).
+
+\subsection{QEMU Guest Agent}
+
+The QEMU guest agent (\texttt{qemu-ga}) provides a bidirectional
+communication channel between the host and the Veilbox VM over
+virtio-serial. It is started automatically at boot when a
+virtio-serial device is detected.
+
+The kernel includes \texttt{CONFIG\_VIRTIO\_CONSOLE=y} for virtio-serial
+support. The \texttt{qemu-ga} binary is copied from the host during
+the build.
+
+\begin{lstlisting}[language=bash]
+# On the host, query the guest agent via the Unix socket
+echo '{"execute":"guest-ping"}' | \
+    sudo socat - UNIX-CONNECT:/tmp/qga.sock
+
+# Get guest network interfaces
+echo '{"execute":"guest-network-get-interfaces"}' | \
+    sudo socat - UNIX-CONNECT:/tmp/qga.sock
+
+# Gracefully shut down the guest
+echo '{"execute":"guest-shutdown"}' | \
+    sudo socat - UNIX-CONNECT:/tmp/qga.sock
+\end{lstlisting}
+
+The \texttt{test.sh} runner includes a virtio-serial device by default,
+so \texttt{qemu-ga} is available in every QEMU session. The host-side
+Unix socket is at \texttt{/tmp/qga.sock}.

@@ -382,6 +382,46 @@ DEFAULT_IF=$(ip route show default | awk '{print $5}')
 This ensures container NAT works regardless of which interface (or bond)
 provides the default gateway.
 
+\section{WireGuard VPN}
+
+Veilbox includes the kernel WireGuard driver (compiled in with
+\texttt{CONFIG\_WIREGUARD=y}) and the \texttt{wg} command-line tool for
+secure site-to-site VPN tunnels. WireGuard uses modern cryptography
+(Curve25519, ChaCha20Poly1305, BLAKE2s) and operates as a lightweight
+kernel network tunnel.
+
+\subsection{Configuration}
+
+\begin{lstlisting}[language=bash]
+# Create a WireGuard interface
+ip link add dev wg0 type wireguard
+
+# Load configuration from file
+wg setconf wg0 /etc/wireguard/wg0.conf
+
+# Bring up and assign IP
+ip link set wg0 up
+ip addr add 10.0.0.2/24 dev wg0
+
+# Show connection status
+wg show
+\end{lstlisting}
+
+\subsection{Implementation Notes}
+
+\begin{itemize}[nosep]
+  \item The WireGuard driver is compiled directly into the kernel
+        (\texttt{CONFIG\_WIREGUARD=y}), not as a module — the initramfs
+        has no module loading infrastructure.
+  \item The \texttt{wg} utility is built from the upstream
+        \texttt{wireguard-tools} source during the Veilbox build
+        pipeline and installed at \texttt{/usr/bin/wg}.
+  \item All cryptographic primitives (Curve25519, ChaCha20Poly1305,
+        BLAKE2s) are in-kernel library implementations, independent of
+        the kernel crypto API. No additional crypto configuration is
+        needed.
+\end{itemize}
+
 \section{Network Troubleshooting Tools}
 
 \subsection{Ping and Connectivity}

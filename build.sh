@@ -361,17 +361,33 @@ mount -t tmpfs none /dev/shm
 
 hostname -F /etc/hostname
 
-mkdir -p /mnt/state
-mount LABEL=VEILBOX /mnt/state 2>/dev/null || mount -t tmpfs none /mnt/state
-mount -o remount,noexec,nodev,nosuid /mnt/state 2>/dev/null || true
-mkdir -p /mnt/state/containerd /mnt/state/log /mnt/state/volumes
-
 # Cgroup v2 (needed for containerd/runc resource limits)
 mkdir -p /sys/fs/cgroup
 mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
 
 # Network initialization via net-init (handles bonding, multi-if, DHCP/static)
 /sbin/net-init
+
+# State disk: LUKS-encrypted (--keep-state) or plain VEILBOX partition
+mkdir -p /mnt/state
+if [ -b /dev/vdb ]; then
+    # Second virtio disk (keep-state mode)
+    if /sbin/cryptsetup isLuks /dev/vdb 2>/dev/null; then
+        if /sbin/cryptsetup luksOpen --key-file=/etc/state.key /dev/vdb state 2>/dev/null; then
+            mount /dev/mapper/state /mnt/state
+        else
+            # Fallback: interactive prompt
+            /sbin/cryptsetup luksOpen /dev/vdb state </dev/console >/dev/console 2>&1
+            mount /dev/mapper/state /mnt/state 2>/dev/null || true
+        fi
+    else
+        mount /dev/vdb /mnt/state 2>/dev/null || mount -t tmpfs none /mnt/state
+    fi
+else
+    mount LABEL=VEILBOX /mnt/state 2>/dev/null || mount -t tmpfs none /mnt/state
+fi
+mount -o remount,noexec,nodev,nosuid /mnt/state 2>/dev/null || true
+mkdir -p /mnt/state/containerd /mnt/state/log /mnt/state/volumes
 
 # Kernel networking tweaks for containers
 sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
@@ -420,6 +436,12 @@ mkdir -p /var/run /var/log /mnt/state/log
 
 # Start health endpoint (Unix socket HTTP health check)
 /usr/bin/health.sh /var/run/health.sock &
+
+# Start QEMU guest agent (for host-guest communication via virtio-serial)
+if [ -c /dev/virtio-ports/org.qemu.guest_agent.0 ]; then
+    /usr/bin/qemu-ga -d -p /dev/virtio-ports/org.qemu.guest_agent.0 \
+        >/var/log/qemu-ga.log 2>&1 &
+fi
 
 # Start minimal eBPF execve tracer (logs to syslog via logger)
 /usr/bin/trace-exec.sh start
@@ -664,6 +686,10 @@ SHUTDOWN
 -a exit,always -F arch=b32 -S execve -k process-exec
 AUDIT
 
+    # LUKS state disk keyfile (random 32-byte key, root-only access)
+    dd if=/dev/urandom of="$ROOTFS_DIR/etc/state.key" bs=32 count=1 2>/dev/null
+    chmod 400 "$ROOTFS_DIR/etc/state.key"
+
     # Nerdctl config with user namespace remapping defaults
     mkdir -p "$ROOTFS_DIR/etc/nerdctl"
     cat > "$ROOTFS_DIR/etc/nerdctl/nerdctl.toml" << 'NERDCTL'
@@ -686,6 +712,71 @@ populate_busybox() {
     ln -sf /bin/busybox "$ROOTFS_DIR/bin/login"
     ln -sf /sbin/init "$ROOTFS_DIR/init"
     ok "BusyBox symlinks created"
+}
+
+setup_wireguard_tools() {
+    local wg_bin="$ROOTFS_DIR/usr/bin/wg"
+    if [ -f "$wg_bin" ]; then
+        info "wg already exists, skipping."
+        return
+    fi
+    info "Building wg (WireGuard tools) from source..."
+    local wg_src="/tmp/wireguard-tools"
+    rm -rf "$wg_src"
+    if wget -q --timeout=30 \
+        "https://git.zx2c4.com/wireguard-tools/snapshot/wireguard-tools-1.0.20210914.tar.xz" \
+        -O /tmp/wg-tools.tar.xz 2>/dev/null; then
+        mkdir -p "$wg_src"
+        tar xf /tmp/wg-tools.tar.xz -C "$wg_src" 2>/dev/null || true
+        local src_dir
+        src_dir=$(find "$wg_src" -maxdepth 2 -name 'wg.c' -path '*/src/*' 2>/dev/null | head -1)
+        src_dir="${src_dir%/src/wg.c}"
+        if [ -n "$src_dir" ] && [ -f "$src_dir/src/wg.c" ]; then
+            gcc -O2 -s -I/usr/include "$src_dir/src/wg.c" -o /tmp/wg 2>/dev/null && {
+                cp /tmp/wg "$wg_bin"
+                chmod 755 "$wg_bin"
+                ok "wg binary built and installed"
+            } || warn "Failed to compile wg"
+        else
+            warn "wireguard-tools source extraction failed"
+        fi
+        rm -f /tmp/wg-tools.tar.xz
+        rm -rf "$wg_src"
+    else
+        warn "Failed to download wireguard-tools; wg will not be available"
+    fi
+}
+
+populate_qemu_ga() {
+    local ga_bin="$ROOTFS_DIR/usr/bin/qemu-ga"
+    if [ -f "$ga_bin" ]; then
+        info "qemu-ga already exists, skipping."
+        return
+    fi
+    if [ -f /usr/bin/qemu-ga ]; then
+        mkdir -p "$ROOTFS_DIR/usr/bin"
+        cp /usr/bin/qemu-ga "$ga_bin"
+        chmod 755 "$ga_bin"
+        ok "qemu-ga copied from host"
+    else
+        warn "qemu-ga not found on host. Install qemu-guest-agent."
+    fi
+}
+
+setup_cryptsetup() {
+    local cs_bin="$ROOTFS_DIR/sbin/cryptsetup"
+    if [ -f "$cs_bin" ]; then
+        info "cryptsetup already exists, skipping."
+        return
+    fi
+    if [ -f /usr/sbin/cryptsetup ]; then
+        mkdir -p "$ROOTFS_DIR/sbin"
+        cp /usr/sbin/cryptsetup "$cs_bin"
+        chmod 755 "$cs_bin"
+        ok "cryptsetup copied from host"
+    else
+        warn "cryptsetup not found on host. LUKS state encryption will not work."
+    fi
 }
 
 populate_containerd() {
@@ -1076,11 +1167,25 @@ set_rootfs_perms() {
 
 create_state_img() {
     local img="$OUTPUT_DIR/state.img"
-    info "Creating state image (ext4, 128MB)..."
+    local keyfile="$ROOTFS_DIR/etc/state.key"
+    info "Creating LUKS-encrypted state image (128MB)..."
     rm -f "$img"
     dd if=/dev/zero of="$img" bs=1M count=128 status=progress
-    mkfs.ext4 -q -F "$img" -L state
-    ok "State image created: $img"
+    if [ -f "$keyfile" ] && command -v cryptsetup &>/dev/null; then
+        cryptsetup luksFormat --batch-mode --key-file="$keyfile" "$img" 2>/dev/null && \
+        cryptsetup luksOpen --key-file="$keyfile" "$img" veilbox-state-tmp 2>/dev/null && {
+            mkfs.ext4 -q /dev/mapper/veilbox-state-tmp -L state
+            cryptsetup luksClose veilbox-state-tmp
+            ok "LUKS-encrypted state image created: $img"
+        } || {
+            warn "LUKS encryption failed, falling back to plain ext4"
+            dd if=/dev/zero of="$img" bs=1M count=128 status=progress
+            mkfs.ext4 -q -F "$img" -L state
+        }
+    else
+        info "cryptsetup not available, creating plain ext4 state image..."
+        mkfs.ext4 -q -F "$img" -L state
+    fi
 }
 
 create_rootfs_squashfs() {
@@ -1323,6 +1428,9 @@ setup_apparmor
 setup_iptables
 setup_audit
 setup_cosign
+setup_wireguard_tools
+populate_qemu_ga
+setup_cryptsetup
 build_ssh_keys
 
 copy_libraries
@@ -1343,7 +1451,8 @@ echo "  Build complete!"
 echo "  Bootable disk:  $OUTPUT_DIR/veilbox.raw"
 echo "  VirtualBox VDI: $OUTPUT_DIR/veilbox.vdi"
 echo "  Kernel:         $OUTPUT_DIR/vmlinuz"
-echo "  State disk:     $OUTPUT_DIR/state.img"
+echo "  State disk:     $OUTPUT_DIR/state.img (LUKS-encrypted if cryptsetup available)"
+echo "  Features:       WireGuard VPN, QEMU guest agent, LUKS state encryption"
 echo "============================================"
 echo ""
 echo "To test with QEMU:"

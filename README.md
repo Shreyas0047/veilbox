@@ -88,6 +88,9 @@ Boot time: **under 15 seconds** to `veilbox login:` prompt.
 | **NIC bonding** | Kernel bonding driver (`CONFIG_BONDING=y`) for link aggregation and failover |
 | **Multi-interface** | Multiple NICs with independent DHCP/static/IP config via `/etc/network/config` |
 | **Policy routing** | Per-interface routing tables for multi-homed traffic segregation |
+| **WireGuard VPN** | Kernel WireGuard driver for secure site-to-site tunnels |
+| **QEMU guest agent** | `qemu-ga` for host-guest communication via virtio-serial |
+| **LUKS state encryption** | State disk encrypted with dm-crypt/LUKS; unlocked at boot via embedded keyfile |
 
 ---
 
@@ -249,6 +252,54 @@ eth1_ROUTES="192.168.200.0/24 192.168.100.1"
 ```
 
 The iptables MASQUERADE rule detects the default route interface dynamically, so NAT works regardless of which interface provides the default gateway.
+
+### WireGuard VPN
+
+Veilbox includes the kernel WireGuard driver (`CONFIG_WIREGUARD=y`) and the `wg` command-line tool for secure site-to-site VPN tunnels.
+
+```bash
+# Create a WireGuard interface
+ip link add dev wg0 type wireguard
+wg setconf wg0 /etc/wireguard/wg0.conf
+ip link set wg0 up
+ip addr add 10.0.0.2/24 dev wg0
+
+# Show connection status
+wg show
+```
+
+The WireGuard driver is compiled into the kernel (not a module) so it's available without any module loading.
+
+### QEMU Guest Agent
+
+The QEMU guest agent (`qemu-ga`) provides a communication channel between the host and the Veilbox VM over virtio-serial. It is started automatically at boot when a virtio-serial device is present.
+
+```bash
+# On the host, send commands to the guest
+echo '{"execute":"guest-ping"}' | sudo socat - UNIX-CONNECT:/tmp/qga.sock
+
+# Guest network info
+echo '{"execute":"guest-network-get-interfaces"}' | sudo socat - UNIX-CONNECT:/tmp/qga.sock
+```
+
+The test.sh runner includes a virtio-serial device by default, so `qemu-ga` is available in every QEMU session. A Unix socket at `/tmp/qga.sock` on the host provides access to the guest agent.
+
+### LUKS State Encryption
+
+The persistent state disk (`state.img`) is encrypted with LUKS (dm-crypt) during the build. A random 32-byte key is embedded in the kernel's initramfs (`/etc/state.key`, root-only access). At boot, the keyfile unlocks the state disk automatically.
+
+**Security model**: The state data is encrypted at rest on disk. An attacker who steals only the disk image cannot decrypt the containerd data, logs, or container volumes without also having the kernel binary (which contains the keyfile in its embedded initramfs).
+
+```bash
+# Use the LUKS-encrypted state disk (creates from pre-built state.img)
+./test.sh --keep-state
+
+# The state.img is encrypted during build; no user intervention needed at boot
+# To change the passphrase (for additional protection):
+# cryptsetup luksChangeKey /path/to/state.img
+```
+
+If `cryptsetup` is not available on the build host, the state image falls back to plain ext4 (backward compatible).
 
 ### Secure Mount
 

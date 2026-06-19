@@ -153,6 +153,10 @@ echo "  Disk:      $DISK_IMG (state partition)"
 [ -n "$SECOND_NIC" ] && echo "  2nd NIC:   eth1 (192.168.100.0/24)"
 KERNEL_CMDLINE="console=ttyS0 quiet"
 if [ -n "$KEEP_STATE" ]; then
+    if [ -f "$OUTPUT_DIR/state.img" ] && { [ ! -f "$STATE_PERSIST" ] || [ "$OUTPUT_DIR/state.img" -nt "$STATE_PERSIST" ]; }; then
+        echo -e "${YELLOW}Using${NC} pre-built LUKS-encrypted state disk ..."
+        cp "$OUTPUT_DIR/state.img" "$STATE_PERSIST"
+    fi
     if [ ! -f "$STATE_PERSIST" ]; then
         echo -e "${YELLOW}Creating${NC} persistent state disk: $STATE_PERSIST ..."
         $QEMU_IMG create -f raw "$STATE_PERSIST" 128M > /dev/null
@@ -169,6 +173,7 @@ fi
 echo "    - BusyBox (init, shell, utilities)"
 echo "    - containerd + runc + nerdctl"
 echo "    - Dropbear (SSH server)"
+echo "    - WireGuard VPN + QEMU guest agent + LUKS state encryption"
 [ -n "$AUTOLOGIN" ] && echo "    - Auto-login as root (veilbox.autologin)"
 [ -n "$KEEP_STATE" ] && echo "    - Persistent state disk (state-persist.img)"
 echo ""
@@ -193,6 +198,9 @@ qemu_base=(
     -enable-kvm
     -netdev user,id=net0,hostfwd=tcp::${SSH_PORT}-:22,hostfwd=tcp::${WEB_PORT}-:${WEB_PORT}
     -device virtio-net,netdev=net0
+    -device virtio-serial
+    -chardev socket,id=qga,path=/tmp/qga.sock,server=on,wait=off
+    -device virtserialport,chardev=qga,name=org.qemu.guest_agent.0
 )
 
 if [ -n "$SECOND_NIC" ]; then
