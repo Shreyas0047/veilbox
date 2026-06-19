@@ -17,6 +17,7 @@ WEB_PORT="${WEB_PORT:-8080}"
 VBOX="${VBOX:-}"
 VBOX_CREATE="${VBOX_CREATE:-}"
 VM_NAME="${VM_NAME:-veilbox}"
+SECOND_NIC=""
 
 KERNEL="$OUTPUT_DIR/vmlinuz"
 DISK_IMG="$OUTPUT_DIR/veilbox.raw"
@@ -41,6 +42,7 @@ usage() {
     echo "  --vbox          Boot in VirtualBox (creates VM if needed)"
     echo "  --vbox-create   Register VM in VirtualBox without starting it"
     echo "  --vm-name NAME  VirtualBox VM name (default: veilbox)"
+    echo "  --second-nic    Add a second virtio NIC (bonding/multi-if testing)"
     echo ""
     echo "Web access:"
     echo "  Run 'nerdctl run -d -p 8080:80 nginx:alpine' inside the VM,"
@@ -64,6 +66,7 @@ for arg in "$@"; do
         --vbox)         VBOX=1 ;;
         --vbox-create)  VBOX_CREATE=1 ;;
         --vm-name=*)    VM_NAME="${arg#*=}" ;;
+        --second-nic)   SECOND_NIC=1 ;;
         --help|-h)      usage ;;
     esac
 done
@@ -147,6 +150,7 @@ echo "  Disk:      $DISK_IMG (state partition)"
     echo "  Web:       host:$WEB_PORT -> guest:$WEB_PORT"
 [ -n "$LOG_FILE" ]  && echo "  Log:       $LOG_FILE"
 [ "$TIMEOUT" -gt 0 ] && echo "  Timeout:   ${TIMEOUT}s"
+[ -n "$SECOND_NIC" ] && echo "  2nd NIC:   eth1 (192.168.100.0/24)"
 KERNEL_CMDLINE="console=ttyS0 quiet"
 if [ -n "$KEEP_STATE" ]; then
     if [ ! -f "$STATE_PERSIST" ]; then
@@ -190,6 +194,13 @@ qemu_base=(
     -netdev user,id=net0,hostfwd=tcp::${SSH_PORT}-:22,hostfwd=tcp::${WEB_PORT}-:${WEB_PORT}
     -device virtio-net,netdev=net0
 )
+
+if [ -n "$SECOND_NIC" ]; then
+    qemu_base+=(
+        -netdev user,id=net1,net=192.168.100.0/24,dhcpstart=192.168.100.100
+        -device virtio-net,netdev=net1,mac=52:54:00:12:34:56
+    )
+fi
 
 if [ -n "$KEEP_STATE" ]; then
     qemu_base+=(-drive file="$STATE_PERSIST",format=raw,if=virtio)

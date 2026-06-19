@@ -85,6 +85,9 @@ Boot time: **under 15 seconds** to `veilbox login:` prompt.
 | **Health endpoint** | Unix socket HTTP health endpoint at /var/run/health.sock |
 | **AppArmor daemon profiles** | Confined profiles for dropbear and containerd daemons |
 | **Log rotation** | syslogd capped at 64KB circular buffer via `-s 65536` |
+| **NIC bonding** | Kernel bonding driver (`CONFIG_BONDING=y`) for link aggregation and failover |
+| **Multi-interface** | Multiple NICs with independent DHCP/static/IP config via `/etc/network/config` |
+| **Policy routing** | Per-interface routing tables for multi-homed traffic segregation |
 
 ---
 
@@ -189,6 +192,63 @@ nerdctl run -d --name app -p 8080:80 nginx:alpine
 ```
 
 Port mapping (`-p 8080:80`) uses the CNI portmap plugin.
+
+### Multi-Interface & Bonding
+
+Veilbox supports multiple NICs, interface bonding, and policy routing via `/etc/network/config` and the `/sbin/net-init` boot script.
+
+**Default config** (single interface, DHCP — backward compatible):
+```bash
+IFACES="eth0"
+eth0_MODE="dhcp"
+```
+
+**Testing with two NICs:**
+```bash
+./test.sh --second-nic
+# Inside the VM, you'll see eth1 with IP 192.168.100.100
+```
+
+**Static IP example:**
+```bash
+IFACES="eth0"
+eth0_MODE="static"
+eth0_IP="192.168.1.100/24"
+eth0_GW="192.168.1.1"
+```
+
+**NIC bonding (802.3ad):**
+```bash
+IFACES="bond0"
+bond0_MODE="dhcp"
+bond0_BOND_SLAVES="eth0 eth1"
+bond0_BOND_OPTS="mode=802.3ad miimon=100 lacp_rate=fast"
+```
+
+**Active-backup failover:**
+```bash
+IFACES="bond0"
+bond0_MODE="static"
+bond0_IP="192.168.1.100/24"
+bond0_GW="192.168.1.1"
+bond0_BOND_SLAVES="eth0 eth1"
+bond0_BOND_OPTS="mode=active-backup miimon=100 primary=eth0"
+```
+
+**Policy routing (multi-homed traffic):**
+```bash
+IFACES="eth0 eth1"
+eth0_MODE="dhcp"
+eth1_MODE="static"
+eth1_IP="192.168.100.10/24"
+eth1_GW="192.168.100.1"
+
+RULES="eth1"
+eth1_TABLE="100"
+eth1_ROUTES="192.168.200.0/24 192.168.100.1"
+```
+
+The iptables MASQUERADE rule detects the default route interface dynamically, so NAT works regardless of which interface provides the default gateway.
 
 ### Secure Mount
 
@@ -423,10 +483,11 @@ veilbox/
 │       └── custom-os.config  # Kernel config (130+ security/networking options)
 ├── rootfs/                   # Initramfs source tree
 │   ├── bin/                  # Symlinks to BusyBox
-│   ├── sbin/                 # System utilities, auditctl, iptables, apparmor_parser
+│   ├── sbin/                 # System utilities, auditctl, iptables, apparmor_parser, net-init
 │   ├── etc/                  # Configuration (inittab, rcS, passwd, subuid, subgid, audit/)
 │   │   ├── apparmor.d/       # AppArmor profiles (docker-default, usr.sbin.dropbear, usr.bin.containerd)
 │   │   ├── containerd/       # containerd config (registry mirror, SystemdCgroup=false)
+│   │   ├── network/          # Network interface config (multi-if, bonding, policy routing)
 │   │   └── nerdctl/          # nerdctl config (cgroupfs, pull_mode)
 │   ├── opt/cni/bin/          # CNI plugins (bridge, host-local, loopback, portmap, firewall)
 │   ├── root/                 # Root profile with colored prompt

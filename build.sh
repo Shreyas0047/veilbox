@@ -370,8 +370,8 @@ mkdir -p /mnt/state/containerd /mnt/state/log /mnt/state/volumes
 mkdir -p /sys/fs/cgroup
 mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
 
-ip link set lo up
-ip link set eth0 up 2>/dev/null || true
+# Network initialization via net-init (handles bonding, multi-if, DHCP/static)
+/sbin/net-init
 
 # Kernel networking tweaks for containers
 sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
@@ -406,10 +406,9 @@ auditctl -a exit,always -F arch=b64 -S execve -k container-exec 2>/dev/null || t
 auditctl -a exit,always -F arch=b64 -S clone,clone3 -k container-clone 2>/dev/null || true
 
 # NAT for external traffic from containers
-/sbin/iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || true
-
-# DHCP configures resolv.conf via /usr/share/udhcpc/default.script
-/sbin/udhcpc -i eth0 -b -q >/dev/null 2>&1 &
+DEFAULT_IF=$(ip route show default 2>/dev/null | awk '{print $5}')
+[ -z "$DEFAULT_IF" ] && DEFAULT_IF="eth0"
+/sbin/iptables -t nat -A POSTROUTING -o "$DEFAULT_IF" -j MASQUERADE 2>/dev/null || true
 
 # syslogd with 64KB circular buffer to prevent log growth on state disk
 /sbin/syslogd -s 65536 -n &
@@ -464,6 +463,154 @@ esac
 exit 0
 SCRIPT
     chmod 755 "$ROOTFS_DIR/usr/share/udhcpc/default.script"
+
+    mkdir -p "$ROOTFS_DIR/etc/network"
+
+    # /etc/network/config — sourced by net-init; default single-interface DHCP
+    cat > "$ROOTFS_DIR/etc/network/config" << 'NETCONF'
+# Network configuration for net-init
+# This file is sourced by /sbin/net-init at boot.
+#
+# Interface modes: dhcp, static, manual
+# Set IFACES to a space-separated list of interface names to configure.
+
+# --- Default: single interface, DHCP ---
+IFACES="eth0"
+eth0_MODE="dhcp"
+
+# --- Static IP example ---
+# IFACES="eth0"
+# eth0_MODE="static"
+# eth0_IP="192.168.1.100/24"
+# eth0_GW="192.168.1.1"
+
+# --- Multiple interfaces ---
+# IFACES="eth0 eth1"
+# eth0_MODE="dhcp"
+# eth1_MODE="static"
+# eth1_IP="192.168.100.10/24"
+# eth1_GW="192.168.100.1"
+
+# --- Bonded interfaces ---
+# IFACES="bond0"
+# bond0_MODE="dhcp"
+# bond0_BOND_SLAVES="eth0 eth1"
+# bond0_BOND_OPTS="mode=802.3ad miimon=100 lacp_rate=fast"
+
+# --- Bond with static IP ---
+# IFACES="bond0"
+# bond0_MODE="static"
+# bond0_IP="192.168.1.100/24"
+# bond0_GW="192.168.1.1"
+# bond0_BOND_SLAVES="eth0 eth1"
+# bond0_BOND_OPTS="mode=active-backup miimon=100 primary=eth0"
+
+# --- Policy routing rules ---
+# Format: RULES="<interface> [<interface> ...]"
+# For each interface in RULES, define:
+#   <iface>_TABLE="<table_id>"
+#   <iface>_ROUTES="<cidr> <gateway> [<cidr> <gateway> ...]"
+#
+# Example — route 192.168.200.0/24 via eth1's gateway:
+# RULES="eth1"
+# eth1_TABLE="100"
+# eth1_ROUTES="192.168.200.0/24 192.168.100.1"
+NETCONF
+
+    # /sbin/net-init — network initialization script
+    cat > "$ROOTFS_DIR/sbin/net-init" << 'NETINIT'
+#!/bin/sh
+# net-init — network initialization script
+# Parses /etc/network/config and configures bonding, multi-interface,
+# static IP, DHCP, and policy routing rules.
+#
+# Config variables per interface (IFACE is each name in IFACES):
+#   IFACES          — space-separated list of interface names
+#   <iface>_MODE    — dhcp (default), static, manual
+#   <iface>_IP      — CIDR notation, e.g. 192.168.1.100/24 (static mode)
+#   <iface>_GW      — gateway IP (static mode)
+#   <iface>_BOND_SLAVES — slave interfaces for bonding, e.g. "eth0 eth1"
+#   <iface>_BOND_OPTS   — bonding options, e.g. "mode=802.3ad miimon=100"
+#   RULES           — space-separated list of interfaces with policy routing
+#   <iface>_TABLE   — routing table ID (policy routing)
+#   <iface>_ROUTES  — space-separated triples: <cidr> via <gateway>
+
+CONFIG="/etc/network/config"
+[ -f "$CONFIG" ] && . "$CONFIG"
+
+# Fallback: no config → single eth0 DHCP (backward compatible)
+if [ -z "${IFACES:-}" ]; then
+    ip link set lo up
+    ip link set eth0 up 2>/dev/null || true
+    /sbin/udhcpc -i eth0 -b -q >/dev/null 2>&1 &
+    exit 0
+fi
+
+ip link set lo up
+
+for IFACE in $IFACES; do
+    _MODE=""; eval '_MODE=$'"${IFACE}_MODE"; _MODE="${_MODE:-dhcp}"
+    _BOND_SLAVES=""; eval '_BOND_SLAVES=$'"${IFACE}_BOND_SLAVES"
+    _BOND_OPTS=""; eval '_BOND_OPTS=$'"${IFACE}_BOND_OPTS"
+
+    # If this is a bonding interface, create and configure the bond
+    if [ -n "$_BOND_SLAVES" ]; then
+        _BOND_OPTS="${_BOND_OPTS:-mode=active-backup miimon=100}"
+        if ! ip link show "$IFACE" >/dev/null 2>&1; then
+            ip link add "$IFACE" type bond 2>/dev/null || true
+        fi
+        if [ -d "/sys/class/net/$IFACE/bonding" ]; then
+            # shellcheck disable=SC2086
+            for _opt in $_BOND_OPTS; do
+                _key="${_opt%%=*}"
+                _val="${_opt#*=}"
+                [ -n "$_key" ] && printf '%s' "$_val" > "/sys/class/net/$IFACE/bonding/$_key" 2>/dev/null || true
+            done
+        fi
+        for _slave in $_BOND_SLAVES; do
+            ip link set "$_slave" down 2>/dev/null || true
+            ip link set "$_slave" master "$IFACE" 2>/dev/null || true
+        done
+    fi
+
+    ip link set "$IFACE" up 2>/dev/null || true
+
+    case "$_MODE" in
+        static)
+            _IP=""; eval '_IP=$'"${IFACE}_IP"
+            _GW=""; eval '_GW=$'"${IFACE}_GW"
+            [ -n "$_IP" ] && ip addr add "$_IP" dev "$IFACE"
+            [ -n "$_GW" ] && ip route add default via "$_GW" dev "$IFACE" 2>/dev/null || true
+            ;;
+        manual)
+            ;;
+        dhcp|*)
+            /sbin/udhcpc -i "$IFACE" -b -q >/dev/null 2>&1 &
+            ;;
+    esac
+done
+
+# Policy routing — install additional rules and table entries
+_RULES=""; eval '_RULES=$RULES'
+if [ -n "$_RULES" ]; then
+    for _RULE_IF in $_RULES; do
+        _TABLE=""; eval '_TABLE=$'"${_RULE_IF}_TABLE"; _TABLE="${_TABLE:-100}"
+        _ROUTES=""; eval '_ROUTES=$'"${_RULE_IF}_ROUTES"
+        if [ -n "$_ROUTES" ]; then
+            # Expect space-separated pairs: <cidr> <gateway> [<cidr> <gateway> ...]
+            set -- $_ROUTES
+            while [ $# -ge 2 ]; do
+                _cidr="$1"; _gw="$2"; shift 2
+                ip route add "$_cidr" via "$_gw" table "$_TABLE" 2>/dev/null || true
+                ip rule add from "$_cidr" table "$_TABLE" 2>/dev/null || true
+            done
+        fi
+    done
+fi
+
+exit 0
+NETINIT
+    chmod 755 "$ROOTFS_DIR/sbin/net-init"
 
     cat > "$ROOTFS_DIR/etc/issue" << 'EOF'
 Veilbox v1.0
@@ -532,7 +679,7 @@ NERDCTL
 populate_busybox() {
     download_binary "$ROOTFS_DIR/bin/busybox" "$BUSYBOX_URL" "/usr/bin/busybox" "BusyBox"
 
-    for applet in init mount umount reboot poweroff modprobe getty ip hostname syslogd kill mkdir ln cat echo ls ps sh sleep head grep pidof udhcpc ifconfig nc netstat df tail wc uname login passwd wget rm chmod; do
+    for applet in init mount umount reboot poweroff modprobe getty ip hostname syslogd kill mkdir ln cat echo ls ps sh sleep head grep pidof udhcpc ifconfig nc netstat df tail wc uname login passwd wget rm chmod route; do
         ln -sf /bin/busybox "$ROOTFS_DIR/sbin/$applet"
     done
     ln -sf /bin/busybox "$ROOTFS_DIR/bin/sh"
