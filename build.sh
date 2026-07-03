@@ -374,6 +374,10 @@ if [ -b /dev/vdb ]; then
     # Second virtio disk (keep-state mode)
     if /sbin/cryptsetup isLuks /dev/vdb 2>/dev/null; then
         if /sbin/cryptsetup luksOpen --key-file=/etc/state.key /dev/vdb state 2>/dev/null; then
+            # Check if the mapper device has a filesystem (first-boot after LUKS format)
+            if ! blkid /dev/mapper/state >/dev/null 2>&1; then
+                mkfs.ext4 -q /dev/mapper/state -L state
+            fi
             mount /dev/mapper/state /mnt/state
         else
             # Fallback: interactive prompt
@@ -687,6 +691,7 @@ SHUTDOWN
 AUDIT
 
     # LUKS state disk keyfile (random 32-byte key, root-only access)
+    rm -f "$ROOTFS_DIR/etc/state.key"
     dd if=/dev/urandom of="$ROOTFS_DIR/etc/state.key" bs=32 count=1 2>/dev/null
     chmod 400 "$ROOTFS_DIR/etc/state.key"
 
@@ -721,24 +726,24 @@ setup_wireguard_tools() {
         return
     fi
     info "Building wg (WireGuard tools) from source..."
-    local wg_src="/tmp/wireguard-tools"
-    rm -rf "$wg_src"
     if wget -q --timeout=30 \
         "https://git.zx2c4.com/wireguard-tools/snapshot/wireguard-tools-1.0.20210914.tar.xz" \
         -O /tmp/wg-tools.tar.xz 2>/dev/null; then
+        local wg_src="/tmp/wg-build"
+        rm -rf "$wg_src"
         mkdir -p "$wg_src"
-        tar xf /tmp/wg-tools.tar.xz -C "$wg_src" 2>/dev/null || true
-        local src_dir
-        src_dir=$(find "$wg_src" -maxdepth 2 -name 'wg.c' -path '*/src/*' 2>/dev/null | head -1)
-        src_dir="${src_dir%/src/wg.c}"
-        if [ -n "$src_dir" ] && [ -f "$src_dir/src/wg.c" ]; then
-            gcc -O2 -s -I/usr/include "$src_dir/src/wg.c" -o /tmp/wg 2>/dev/null && {
+        tar xf /tmp/wg-tools.tar.xz -C "$wg_src" --strip-components=1 2>/dev/null
+        if [ -d "$wg_src/src" ]; then
+            gcc -O2 -s -std=gnu99 -D_GNU_SOURCE \
+                -DRUNSTATEDIR='"/var/run"' \
+                -idirafter "$wg_src/src/uapi/linux" \
+                "$wg_src/src/"*.c -o /tmp/wg 2>/dev/null && {
                 cp /tmp/wg "$wg_bin"
                 chmod 755 "$wg_bin"
                 ok "wg binary built and installed"
             } || warn "Failed to compile wg"
         else
-            warn "wireguard-tools source extraction failed"
+            warn "wireguard-tools source extraction failed (src/ not found in $wg_src)"
         fi
         rm -f /tmp/wg-tools.tar.xz
         rm -rf "$wg_src"
@@ -1168,23 +1173,20 @@ set_rootfs_perms() {
 create_state_img() {
     local img="$OUTPUT_DIR/state.img"
     local keyfile="$ROOTFS_DIR/etc/state.key"
-    info "Creating LUKS-encrypted state image (128MB)..."
+    info "Creating state image (128MB)..."
     rm -f "$img"
     dd if=/dev/zero of="$img" bs=1M count=128 status=progress
     if [ -f "$keyfile" ] && command -v cryptsetup &>/dev/null; then
+        # Format LUKS header (works without root — only writes metadata)
+        # The filesystem inside is created on first boot by rcS
         cryptsetup luksFormat --batch-mode --key-file="$keyfile" "$img" 2>/dev/null && \
-        cryptsetup luksOpen --key-file="$keyfile" "$img" veilbox-state-tmp 2>/dev/null && {
-            mkfs.ext4 -q /dev/mapper/veilbox-state-tmp -L state
-            cryptsetup luksClose veilbox-state-tmp
-            ok "LUKS-encrypted state image created: $img"
-        } || {
-            warn "LUKS encryption failed, falling back to plain ext4"
-            dd if=/dev/zero of="$img" bs=1M count=128 status=progress
-            mkfs.ext4 -q -F "$img" -L state
-        }
-    else
-        info "cryptsetup not available, creating plain ext4 state image..."
+            ok "LUKS-encrypted state image created: $img (filesystem created at first boot)" || \
+            warn "LUKS format failed, falling back to plain ext4"
+    fi
+    # If the file is not a LUKS container (fallback), create plain ext4
+    if ! cryptsetup isLuks "$img" 2>/dev/null; then
         mkfs.ext4 -q -F "$img" -L state
+        info "Plain ext4 state image created: $img"
     fi
 }
 

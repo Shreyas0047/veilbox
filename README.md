@@ -492,6 +492,30 @@ MEM=2G ./test.sh
 
 ---
 
+## Docker Build
+
+The entire build can run inside a container, no host dependencies required:
+
+```bash
+# Build the builder image (one-time)
+docker build -t veilbox-builder .
+
+# Build Veilbox (output lands in output/ on your host)
+docker run --rm -v "$(pwd):/build" -w /build veilbox-builder ./build.sh
+```
+
+To extract build artifacts without a volume mount (multi-stage output):
+
+```bash
+docker build --output=output/ .
+```
+
+### How it works
+
+The [`Dockerfile`](Dockerfile) starts from `fedora:latest` and installs all build dependencies (kernel toolchain, GRUB, QEMU, cryptsetup, SquashFS tools, etc.). The source tree is mounted at runtime so no `COPY` is needed — keeping the Docker image small and avoiding the multi-gigabyte kernel source in the build context.
+
+---
+
 ## Build Guide
 
 A **152-page LaTeX technical reference** is included:
@@ -521,6 +545,7 @@ xdg-open veilbox-guide.pdf # Linux
 
 ```
 veilbox/
+├── Dockerfile                # Containerized build (see Docker Build section)
 ├── build.sh                  # Build pipeline (14 stages)
 ├── test.sh                   # QEMU / VirtualBox test runner
 ├── CONTRIBUTING.md           # Contributor guide

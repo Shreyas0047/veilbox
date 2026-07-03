@@ -9,17 +9,37 @@ mount -t tmpfs none /dev/shm
 
 hostname -F /etc/hostname
 
-mkdir -p /mnt/state
-mount LABEL=VEILBOX /mnt/state 2>/dev/null || mount -t tmpfs none /mnt/state
-mount -o remount,noexec,nodev,nosuid /mnt/state 2>/dev/null || true
-mkdir -p /mnt/state/containerd /mnt/state/log /mnt/state/volumes
-
 # Cgroup v2 (needed for containerd/runc resource limits)
 mkdir -p /sys/fs/cgroup
 mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null || true
 
-ip link set lo up
-ip link set eth0 up 2>/dev/null || true
+# Network initialization via net-init (handles bonding, multi-if, DHCP/static)
+/sbin/net-init
+
+# State disk: LUKS-encrypted (--keep-state) or plain VEILBOX partition
+mkdir -p /mnt/state
+if [ -b /dev/vdb ]; then
+    # Second virtio disk (keep-state mode)
+    if /sbin/cryptsetup isLuks /dev/vdb 2>/dev/null; then
+        if /sbin/cryptsetup luksOpen --key-file=/etc/state.key /dev/vdb state 2>/dev/null; then
+            # Check if the mapper device has a filesystem (first-boot after LUKS format)
+            if ! blkid /dev/mapper/state >/dev/null 2>&1; then
+                mkfs.ext4 -q /dev/mapper/state -L state
+            fi
+            mount /dev/mapper/state /mnt/state
+        else
+            # Fallback: interactive prompt
+            /sbin/cryptsetup luksOpen /dev/vdb state </dev/console >/dev/console 2>&1
+            mount /dev/mapper/state /mnt/state 2>/dev/null || true
+        fi
+    else
+        mount /dev/vdb /mnt/state 2>/dev/null || mount -t tmpfs none /mnt/state
+    fi
+else
+    mount LABEL=VEILBOX /mnt/state 2>/dev/null || mount -t tmpfs none /mnt/state
+fi
+mount -o remount,noexec,nodev,nosuid /mnt/state 2>/dev/null || true
+mkdir -p /mnt/state/containerd /mnt/state/log /mnt/state/volumes
 
 # Kernel networking tweaks for containers
 sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
@@ -54,10 +74,9 @@ auditctl -a exit,always -F arch=b64 -S execve -k container-exec 2>/dev/null || t
 auditctl -a exit,always -F arch=b64 -S clone,clone3 -k container-clone 2>/dev/null || true
 
 # NAT for external traffic from containers
-/sbin/iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || true
-
-# DHCP configures resolv.conf via /usr/share/udhcpc/default.script
-/sbin/udhcpc -i eth0 -b -q >/dev/null 2>&1 &
+DEFAULT_IF=$(ip route show default 2>/dev/null | awk '{print $5}')
+[ -z "$DEFAULT_IF" ] && DEFAULT_IF="eth0"
+/sbin/iptables -t nat -A POSTROUTING -o "$DEFAULT_IF" -j MASQUERADE 2>/dev/null || true
 
 # syslogd with 64KB circular buffer to prevent log growth on state disk
 /sbin/syslogd -s 65536 -n &
@@ -69,6 +88,12 @@ mkdir -p /var/run /var/log /mnt/state/log
 
 # Start health endpoint (Unix socket HTTP health check)
 /usr/bin/health.sh /var/run/health.sock &
+
+# Start QEMU guest agent (for host-guest communication via virtio-serial)
+if [ -c /dev/virtio-ports/org.qemu.guest_agent.0 ]; then
+    /usr/bin/qemu-ga -d -p /dev/virtio-ports/org.qemu.guest_agent.0 \
+        >/var/log/qemu-ga.log 2>&1 &
+fi
 
 # Start minimal eBPF execve tracer (logs to syslog via logger)
 /usr/bin/trace-exec.sh start
