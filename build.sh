@@ -1425,6 +1425,8 @@ WRAPPER
     chmod 755 "$ROOTFS_DIR/usr/bin/nerdctl"
     ok "nerdctl wrapper created (default: 1 CPU, 512MB RAM)"
 fi
+ln -sf /usr/bin/nerdctl "$ROOTFS_DIR/usr/bin/docker"
+ok "docker → nerdctl symlink created"
 build_dropbear
 setup_apparmor
 setup_iptables

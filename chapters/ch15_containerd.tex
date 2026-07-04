@@ -131,6 +131,13 @@ nerdctl stop web              # Graceful stop (SIGTERM)
 nerdctl rm web                # Remove container
 \end{lstlisting}
 
+\paragraph{Docker CLI compatibility.}
+The \texttt{docker} command is available as a symlink to \texttt{nerdctl}.
+Every \texttt{nerdctl} example in this chapter also works with \texttt{docker}:
+\texttt{docker run}, \texttt{docker ps}, \texttt{docker exec}, etc.
+No Docker daemon runs inside the VM — \texttt{nerdctl} (and therefore
+\texttt{docker}) communicates directly with containerd via gRPC.
+
 \section{Containerd Configuration}
 
 \begin{lstlisting}

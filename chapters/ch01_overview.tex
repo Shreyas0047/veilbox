@@ -44,7 +44,7 @@ post-install configuration needed.
 BusyBox replaces over 300 standard Unix utilities (from coreutils, util-linux,
 procps-ng, and many other packages) with a single statically-linked binary.
 This reduces the root filesystem from hundreds of megabytes to approximately
-90 megabytes (including containerd, runc, nerdctl, and Dropbear binaries).
+90 megabytes (including containerd, runc, nerdctl (aliased as docker), and Dropbear binaries).
 
 The BusyBox binary determines which utility to run based on argv{[}0{]}
 (the name it was called with via symbolic links). For example, /bin/sh is a

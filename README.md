@@ -62,7 +62,7 @@ Boot time: **under 15 seconds** to `veilbox login:` prompt.
 | **Custom Linux kernel** | v7.1.0-rc6, configured for VM and bare metal |
 | **Embedded initramfs** | Root filesystem compiled into the kernel binary |
 | **BusyBox userspace** | 300+ Unix utilities in a single binary |
-| **containerd + runc + nerdctl** | Industry-standard container runtime, ready out of the box |
+| **containerd + runc + nerdctl** | Industry-standard container runtime; `docker` is also available as a nerdctl alias |
 | **Dropbear SSH server** | Key-based and password authentication |
 | **Dual console** | VGA text (tty1) + serial (ttyS0) |
 | **Persistent state** | External ext4 disk mounted at `/mnt/state` |
@@ -91,6 +91,21 @@ Boot time: **under 15 seconds** to `veilbox login:` prompt.
 | **WireGuard VPN** | Kernel WireGuard driver for secure site-to-site tunnels |
 | **QEMU guest agent** | `qemu-ga` for host-guest communication via virtio-serial |
 | **LUKS state encryption** | State disk encrypted with dm-crypt/LUKS; unlocked at boot via embedded keyfile |
+
+---
+
+### Docker CLI Compatibility
+
+The `docker` command is available as a drop-in alias for `nerdctl`. Everything you'd write with `docker` works the same:
+
+```bash
+docker run -d --name web -p 8080:80 nginx:alpine
+docker ps
+docker logs web
+docker exec web ls
+```
+
+No Docker daemon runs inside the VM. `docker` maps directly to `nerdctl`, which talks to containerd without any extra daemon overhead.
 
 ---
 

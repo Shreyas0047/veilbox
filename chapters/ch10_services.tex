@@ -148,7 +148,7 @@ containerd -c /etc/containerd/config.toml &
 
 \subsection{Interaction}
 
-Use nerdctl to interact with containerd:
+Use nerdctl (or the docker alias) to interact with containerd:
 \begin{lstlisting}
 nerdctl images                   # List pulled images
 nerdctl pull alpine:latest       # Pull an image
@@ -156,6 +156,9 @@ nerdctl run -it alpine:latest sh # Run a container
 nerdctl ps -a                    # List all containers
 nerdctl logs <id>               # View container logs
 \end{lstlisting}
+The \texttt{docker} command is a symlink to \texttt{nerdctl}, so every
+example above also works with \texttt{docker images}, \texttt{docker pull},
+etc. No Docker daemon is needed inside the VM.
 
 \section{Dropbear: SSH Server}
 
