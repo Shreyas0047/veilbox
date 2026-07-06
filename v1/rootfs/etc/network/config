@@ -1,0 +1,47 @@
+# Network configuration for net-init
+# This file is sourced by /sbin/net-init at boot.
+#
+# Interface modes: dhcp, static, manual
+# Set IFACES to a space-separated list of interface names to configure.
+
+# --- Default: single interface, DHCP ---
+IFACES="eth0"
+eth0_MODE="dhcp"
+
+# --- Static IP example ---
+# IFACES="eth0"
+# eth0_MODE="static"
+# eth0_IP="192.168.1.100/24"
+# eth0_GW="192.168.1.1"
+
+# --- Multiple interfaces ---
+# IFACES="eth0 eth1"
+# eth0_MODE="dhcp"
+# eth1_MODE="static"
+# eth1_IP="192.168.100.10/24"
+# eth1_GW="192.168.100.1"
+
+# --- Bonded interfaces ---
+# IFACES="bond0"
+# bond0_MODE="dhcp"
+# bond0_BOND_SLAVES="eth0 eth1"
+# bond0_BOND_OPTS="mode=802.3ad miimon=100 lacp_rate=fast"
+
+# --- Bond with static IP ---
+# IFACES="bond0"
+# bond0_MODE="static"
+# bond0_IP="192.168.1.100/24"
+# bond0_GW="192.168.1.1"
+# bond0_BOND_SLAVES="eth0 eth1"
+# bond0_BOND_OPTS="mode=active-backup miimon=100 primary=eth0"
+
+# --- Policy routing rules ---
+# Format: RULES="<interface> [<interface> ...]"
+# For each interface in RULES, define:
+#   <iface>_TABLE="<table_id>"
+#   <iface>_ROUTES="<cidr> <gateway> [<cidr> <gateway> ...]"
+#
+# Example — route 192.168.200.0/24 via eth1's gateway:
+# RULES="eth1"
+# eth1_TABLE="100"
+# eth1_ROUTES="192.168.200.0/24 192.168.100.1"
