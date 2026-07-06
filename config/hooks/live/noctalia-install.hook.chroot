@@ -1,21 +1,14 @@
 #!/bin/sh
 set -e
 
-TMPDIR=$(mktemp -d)
-cd "$TMPDIR"
-cleanup() { rm -rf "$TMPDIR"; }
-trap cleanup EXIT
-
 # Niri: scrollable-tiling Wayland compositor
-NIRI_VERSION="25.06"
-NIRI_URL="https://github.com/YaLTeR/niri/releases/download/v${NIRI_VERSION}/niri-${NIRI_VERSION}-x86_64-linux-gnu.tar.xz"
-curl -fsSL "$NIRI_URL" | tar xJ
-mv niri /usr/local/bin/niri
+NIRI_VERSION="26.04"
+NIRI_URL="https://github.com/niri-wm/niri/releases/download/v${NIRI_VERSION}/niri-${NIRI_VERSION}-x86_64-linux-gnu.tar.xz"
+curl -fsSL "$NIRI_URL" | tar xJ -C /usr/local/bin --no-same-owner
 chmod +x /usr/local/bin/niri
 
-# Noctalia: minimal Wayland shell for Niri
-NOCTALIA_VERSION="0.1.0"
-NOCTALIA_DEB="noctalia_${NOCTALIA_VERSION}_amd64.deb"
-NOCTALIA_URL="https://github.com/noctalia/shell/releases/download/v${NOCTALIA_VERSION}/${NOCTALIA_DEB}"
-curl -fsSLO "$NOCTALIA_URL"
-apt-get install -y ./"$NOCTALIA_DEB"
+# Noctalia: minimal Wayland shell
+curl -fsSL https://pkg.noctalia.dev/gpg.key | gpg --dearmor -o /etc/apt/keyrings/noctalia.gpg
+echo "deb [signed-by=/etc/apt/keyrings/noctalia.gpg] https://pkg.noctalia.dev/apt trixie main" > /etc/apt/sources.list.d/noctalia.list
+apt-get update -qq
+apt-get install -y -qq noctalia
