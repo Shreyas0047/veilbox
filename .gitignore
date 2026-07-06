@@ -106,3 +106,4 @@ v1/rootfs/usr/bin/wg
 *.out
 *.pdf
 veilbox-guide.*
+chroot.packages.install
