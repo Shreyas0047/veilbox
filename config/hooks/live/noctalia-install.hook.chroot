@@ -1,13 +1,17 @@
 #!/bin/sh
 set -e
 
-# Niri: scrollable-tiling Wayland compositor
-NIRI_VERSION="26.04"
-NIRI_URL="https://github.com/niri-wm/niri/releases/download/v${NIRI_VERSION}/niri-${NIRI_VERSION}-x86_64-linux-gnu.tar.xz"
-curl -fsSL "$NIRI_URL" | tar xJ -C /usr/local/bin --no-same-owner
-chmod +x /usr/local/bin/niri
+# Niri: scrollable-tiling Wayland compositor (community Debian .deb)
+NIRI_VER="26.04ppa2"
+NIRI_DEB_URL="https://github.com/Alexvs159/niri-debian/releases/download/${NIRI_VER}/niri_${NIRI_VER}_amd64.deb"
+XWAYLAND_DEB_URL="https://github.com/Alexvs159/niri-debian/releases/download/${NIRI_VER}/xwayland-satellite_0.8.1ppa2_amd64.deb"
 
-# Noctalia: minimal Wayland shell
+curl -fsSLO "$NIRI_DEB_URL"
+curl -fsSLO "$XWAYLAND_DEB_URL"
+apt-get install -y ./niri_${NIRI_VER}_amd64.deb ./xwayland-satellite_0.8.1ppa2_amd64.deb
+rm -f niri_${NIRI_VER}_amd64.deb xwayland-satellite_0.8.1ppa2_amd64.deb
+
+# Noctalia: minimal Wayland shell (official APT repo)
 curl -fsSL https://pkg.noctalia.dev/gpg.key | gpg --dearmor -o /etc/apt/keyrings/noctalia.gpg
 echo "deb [signed-by=/etc/apt/keyrings/noctalia.gpg] https://pkg.noctalia.dev/apt trixie main" > /etc/apt/sources.list.d/noctalia.list
 apt-get update -qq
