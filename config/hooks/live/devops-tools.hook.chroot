@@ -124,5 +124,8 @@ try_install "gcloud" sh -c "
     apt-get update -qq 2>/dev/null && apt-get install -y -qq google-cloud-sdk 2>/dev/null
 "
 
+# Recover dpkg from any partial installs
+dpkg --configure -a 2>/dev/null || true
+
 # Cleanup
 apt-get clean -qq 2>/dev/null || true

@@ -1,9 +1,10 @@
 #!/bin/sh
 set -e
 
-# Install Docker CE via the official convenience script
-# https://get.docker.com/
+# Recover from any earlier dpkg failures (e.g. partially configured packages)
+dpkg --configure -a 2>/dev/null || true
 
+# Install Docker CE via the official convenience script
 curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
 sh /tmp/get-docker.sh
 rm -f /tmp/get-docker.sh
