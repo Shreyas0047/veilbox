@@ -1,8 +1,6 @@
 # Veilbox v2 - Wayland desktop packages
 # Niri compositor (installed via hook if not in repo)
 # Noctalia shell (installed via hook from GitHub releases)
-seatd
-elogind
 xdg-desktop-portal
 xdg-desktop-portal-gtk
 xdg-utils
