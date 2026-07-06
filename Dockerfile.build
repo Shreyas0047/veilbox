@@ -1,0 +1,12 @@
+FROM debian:trixie-slim AS veilbox-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    live-build \
+    curl \
+    ca-certificates \
+    gnupg \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /repo
+ENTRYPOINT ["/bin/bash"]

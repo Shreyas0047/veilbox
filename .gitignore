@@ -3,11 +3,23 @@ output/
 *.iso
 *.hybrid.iso
 build-cache/
-config/binary/
-config/chroot/
-config/installer/
 .binary/
 .chroot/
+
+# Live-build generated files (run `lb config` to regenerate)
+chroot/
+binary/
+cache/
+.build/
+config/binary
+config/bootstrap
+config/chroot
+config/common
+config/installer
+config/source
+config/hooks/normal/
+config/hooks/live/*.hook.chroot
+config/package-lists/live.list.chroot
 
 # Linux kernel source tree (unrelated to v2)
 /arch/

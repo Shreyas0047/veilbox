@@ -8,7 +8,7 @@ xdg-desktop-portal-gtk
 xdg-utils
 foot
 fuzzel
-mako
+mako-notifier
 wl-clipboard
 fonts-font-awesome
 fonts-noto
@@ -21,7 +21,6 @@ libspa-0.2-bluetooth
 mesa-utils
 mesa-vulkan-drivers
 libgl1-mesa-dri
-libgl1-mesa-glx
 vulkan-tools
 libvulkan1
 libvulkan-dev

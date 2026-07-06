@@ -27,9 +27,8 @@ zip
 unzip
 cryptsetup
 cryptsetup-initramfs
-cryptsetup-run
 firmware-linux
-firmware-sof-sound
+firmware-sof-signed
 intel-microcode
 amd64-microcode
 grub-pc
