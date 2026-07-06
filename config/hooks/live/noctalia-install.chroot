@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+# Noctalia: minimal Wayland shell for Niri
+# Latest release: https://github.com/noctalia/shell/releases
+
+NOCTALIA_VERSION="0.1.0"
+NOCTALIA_DEB="noctalia_${NOCTALIA_VERSION}_amd64.deb"
+NOCTALIA_URL="https://github.com/noctalia/shell/releases/download/v${NOCTALIA_VERSION}/${NOCTALIA_DEB}"
+
+TMPDIR=$(mktemp -d)
+cd "$TMPDIR"
+
+curl -fsSLO "$NOCTALIA_URL"
+apt-get install -y ./"$NOCTALIA_DEB"
+
+cd /
+rm -rf "$TMPDIR"

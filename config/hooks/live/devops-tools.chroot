@@ -1,0 +1,115 @@
+#!/bin/sh
+set -e
+
+# Install DevOps tools from GitHub releases and cloud vendor repos
+TOOLS_DIR="/usr/local/bin"
+TMPDIR=$(mktemp -d)
+cd "$TMPDIR"
+
+cleanup() { rm -rf "$TMPDIR"; }
+trap cleanup EXIT
+
+ARCH="amd64"
+OS="linux"
+
+download_release() {
+    local repo="$1"  # owner/name
+    local pattern="$2"  # asset name pattern
+    local output="$3"   # output binary name
+    local version="${4:-latest}"
+
+    local url
+    if [ "$version" = "latest" ]; then
+        url=$(curl -s "https://api.github.com/repos/${repo}/releases/latest" \
+            | grep "browser_download_url.*${pattern}" \
+            | head -1 \
+            | cut -d: -f2- \
+            | tr -d ' "')
+    else
+        url="https://github.com/${repo}/releases/download/v${version}/${pattern}"
+    fi
+
+    [ -z "$url" ] && return 1
+
+    curl -fsSL "$url" -o "download"
+    case "$url" in
+        *.tar.gz) tar xzf "download" -C "$TOOLS_DIR" "$output" 2>/dev/null || tar xzf "download" ;;
+        *.gz) gunzip -c "download" > "$TOOLS_DIR/$output" ;;
+        *) cp "download" "$TOOLS_DIR/$output" ;;
+    esac
+    chmod +x "$TOOLS_DIR/$output"
+}
+
+# kubectl (Kubernetes CLI)
+download_release "kubernetes/kubernetes" "linux-${ARCH}/kubectl" "kubectl" \
+    "$(curl -s https://cdn.dl.k8s.io/release/stable.txt | sed 's/^v//')"
+
+# Helm
+download_release "helm/helm" "linux-${ARCH}.tar.gz" "helm"
+
+# Terraform (HashiCorp)
+# Use HashiCorp's apt repo instead for updates
+curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com bookworm main" \
+    > /etc/apt/sources.list.d/hashicorp.list
+apt-get update
+apt-get install -y terraform
+
+# yq (YAML processor)
+download_release "mikefarah/yq" "linux_${ARCH}.tar.gz" "yq"
+
+# dive (Docker image layer analyzer)
+download_release "wagoodman/dive" "linux_${ARCH}.tar.gz" "dive"
+
+# trivy (vulnerability scanner)
+download_release "aquasecurity/trivy" "Linux-${ARCH}.tar.gz" "trivy"
+
+# k9s (Kubernetes TUI)
+download_release "derailed/k9s" "Linux_${ARCH}.tar.gz" "k9s"
+
+# stern (Kubernetes log tail)
+download_release "stern/stern" "linux_${ARCH}.tar.gz" "stern"
+
+# kind (Kubernetes in Docker)
+download_release "kubernetes-sigs/kind" "linux-${ARCH}" "kind"
+
+# minikube
+download_release "kubernetes/minikube" "linux-${ARCH}" "minikube"
+
+# kustomize
+download_release "kubernetes-sigs/kustomize" "linux_${ARCH}.tar.gz" "kustomize"
+
+# argocd
+download_release "argoproj/argo-cd" "linux-${ARCH}" "argocd"
+
+# gh (GitHub CLI) - use Debian repo
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
+    dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+    > /etc/apt/sources.list.d/github-cli.list
+apt-get update
+apt-get install -y gh
+
+# AWS CLI v2
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip -q awscliv2.zip
+./aws/install
+rm -rf aws awscliv2.zip
+
+# Azure CLI
+curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli bookworm main" \
+    > /etc/apt/sources.list.d/azure-cli.list
+apt-get update
+apt-get install -y azure-cli
+
+# Google Cloud CLI
+echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+    > /etc/apt/sources.list.d/google-cloud-sdk.list
+curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+apt-get update
+apt-get install -y google-cloud-sdk
+
+# Cleanup
+apt-get clean

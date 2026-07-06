@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Niri
+Comment=Niri Wayland compositor with Noctalia
+Exec=/usr/local/bin/niri-session
+Type=Application
+DesktopNames=niri

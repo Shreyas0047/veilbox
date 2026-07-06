@@ -1,0 +1,35 @@
+# Veilbox GRUB Theme
+title-text: ""
+title-color: "#00d4aa"
+title-font: "DejaVu Sans Bold 18"
+desktop-image: "background.png"
+desktop-color: "#0a0a14"
+terminal-font: "DejaVu Sans Mono 12"
+
++ boot_menu {
+    left = 25%
+    top = 35%
+    width = 50%
+    height = 40%
+    item_color = "#aaaaaa"
+    selected_item_color = "#00d4aa"
+    item_height = 36
+    item_padding = 8
+    item_spacing = 4
+    item_font = "DejaVu Sans 14"
+    selected_item_font = "DejaVu Sans Bold 14"
+    item_icon_space = 0
+    scrollbar = false
+}
+
++ progress_bar {
+    id = "__timeout__"
+    left = 25%
+    top = 78%
+    width = 50%
+    height = 4
+    bar_color = "#00d4aa"
+    bar_bg_color = "#1a1a2e"
+    bar_height = 4
+    bar_border = false
+}

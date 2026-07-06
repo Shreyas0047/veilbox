@@ -1,0 +1,59 @@
+---
+componentName: veilbox
+name: Veilbox
+version: "2.0"
+shortProductName: Veilbox
+bootloaderEntryName: Veilbox
+welcomeStyle: "Squished"
+welcomeExpandingLogo: true
+
+strings:
+    productName:         Veilbox Linux
+    shortProductName:    Veilbox
+    version:             2.0
+    shortVersion:        2.0
+    versionedName:       Veilbox 2.0
+    shortVersionedName:  Veilbox 2.0
+    bootloaderEntryName: Veilbox
+
+images:
+    productLogo:         "veilbox-logo.png"
+    productIcon:         "veilbox-logo.png"
+    productWelcome:      "veilbox-welcome.png"
+    productWallpaper:    "veilbox-wallpaper.png"
+
+slideshow: "show.qml"
+
+style:
+    sidebarBackground:          "#0a0a14"
+    sidebarText:                "#ffffff"
+    sidebarTextCurrent:         "#00d4aa"
+    sidebarSelectIndicatorColor: "#00d4aa"
+    background:                 "#0a0a14"
+    text:                       "#cccccc"
+    textLink:                   "#00d4aa"
+    textLinkHover:              "#0088cc"
+    headerBackground:           "#1a1a2e"
+    headerText:                 "#00d4aa"
+    buttonBackground:           "#0088cc"
+    buttonBackgroundHover:      "#00d4aa"
+    buttonBackgroundPressed:    "#006699"
+    buttonText:                 "#ffffff"
+    buttonTextHover:            "#ffffff"
+    buttonTextPressed:          "#ffffff"
+    inputBackground:            "#1a1a2e"
+    inputBackgroundDisabled:    "#111122"
+    inputBorder:                "#333355"
+    inputBorderHover:           "#00d4aa"
+    inputText:                  "#ffffff"
+    inputTextDisabled:          "#666666"
+    numPadBackground:           "#1a1a2e"
+    numPadText:                 "#ffffff"
+    numPadBorder:               "#333355"
+    selectedRowColor:           "#0088cc"
+    progressBarColor:           "#00d4aa"
+    progressBarBackground:      "#1a1a2e"
+    statusBackground:           "#1a1a2e"
+    statusFontColor:            "#00d4aa"
+    statusFontColorWarning:     "#ff8800"
+    statusFontColorError:       "#ff4444"

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Veilbox MOTD system info
+[ -r /etc/os-release ] && . /etc/os-release
+echo "  OS:      ${PRETTY_NAME:-Veilbox v2}"
+echo "  Kernel:  $(uname -r)"
+echo "  Uptime:  $(uptime -p | sed 's/up //')"
+echo "  Memory:  $(free -h | awk '/^Mem:/ {print $3 " / " $2}')"
+echo "  Disk:    $(df -h / | awk 'NR==2 {print $3 " / " $2}')"
+echo "  Docker:  $(docker --version 2>/dev/null || echo 'not running')"
+echo "  CPU:     $(lscpu | awk '/^Model name:/ {print $3, $4, $5, $6, $7, $8}')"
+echo ""

@@ -1,0 +1,8 @@
+# Veilbox v2 - DevOps tooling
+# Available in Debian repos
+skopeo
+ansible
+jq
+python3
+python3-pip
+python3-venv

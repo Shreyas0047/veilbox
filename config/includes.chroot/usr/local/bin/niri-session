@@ -1,0 +1,24 @@
+#!/bin/sh
+# Niri session launcher for Veilbox
+
+export XDG_CURRENT_DESKTOP=niri
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_DESKTOP=niri
+export QT_QPA_PLATFORM=wayland
+export GDK_BACKEND=wayland
+export MOZ_ENABLE_WAYLAND=1
+export SDL_VIDEODRIVER=wayland
+export _JAVA_AWT_WM_NONREPARENTING=1
+
+# Start pipewire if available
+if command -v pipewire &>/dev/null && ! pgrep -x pipewire >/dev/null; then
+    pipewire &
+fi
+if command -v wireplumber &>/dev/null && ! pgrep -x wireplumber >/dev/null; then
+    wireplumber &
+fi
+
+# Wait for session to be ready
+sleep 1
+
+exec niri

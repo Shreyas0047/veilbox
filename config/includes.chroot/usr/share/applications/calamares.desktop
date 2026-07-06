@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Install Veilbox
+Comment=Install Veilbox Linux on this computer
+Exec=calamares -d
+Icon=calamares
+Terminal=false
+Categories=System;Installer;
+StartupNotify=false

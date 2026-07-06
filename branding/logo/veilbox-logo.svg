@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00d4aa"/>
+      <stop offset="100%" stop-color="#0088cc"/>
+    </linearGradient>
+  </defs>
+  <!-- Shield body -->
+  <path d="M128 16 L32 64 L32 128 C32 192 72 232 128 248 C184 232 224 192 224 128 L224 64 Z"
+        fill="none" stroke="url(#g)" stroke-width="8" stroke-linejoin="round"/>
+  <!-- V shape -->
+  <polyline points="80,120 128,180 176,120"
+            fill="none" stroke="url(#g)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Horizontal accent -->
+  <line x1="96" y1="80" x2="160" y2="80"
+        stroke="url(#g)" stroke-width="4" stroke-linecap="round"/>
+</svg>

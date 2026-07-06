@@ -1,0 +1,35 @@
+#!/bin/sh
+set -e
+
+THEME_DIR="/boot/grub/themes/veilbox"
+
+# Generate background PNG from SVG
+if command -v rsvg-convert &>/dev/null; then
+    rsvg-convert -w 1920 -h 1080 \
+        /usr/share/backgrounds/veilbox-wallpaper.svg \
+        -o /usr/share/backgrounds/veilbox-wallpaper.png
+elif command -v convert &>/dev/null; then
+    convert /usr/share/backgrounds/veilbox-wallpaper.svg \
+        -resize 1920x1080 \
+        /usr/share/backgrounds/veilbox-wallpaper.png
+fi
+
+# Copy background to GRUB theme if generated
+if [ -f /usr/share/backgrounds/veilbox-wallpaper.png ]; then
+    cp /usr/share/backgrounds/veilbox-wallpaper.png "$THEME_DIR/background.png"
+fi
+
+# Generate Plymouth splash
+if command -v convert &>/dev/null; then
+    mkdir -p /usr/share/plymouth/themes/veilbox
+    convert -size 1920x1080 gradient:'#0a0a14-#1a1a2e' \
+        /usr/share/plymouth/themes/veilbox/splash.png
+fi
+
+# Set MOTD script executable
+chmod +x /etc/update-motd.d/10-veilbox-info
+
+# Enable MOTD
+if [ -f /etc/default/motd-news ]; then
+    sed -i 's/ENABLED=.*/ENABLED=1/' /etc/default/motd-news
+fi

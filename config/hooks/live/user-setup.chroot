@@ -1,0 +1,23 @@
+#!/bin/sh
+set -e
+
+# Create the default live user
+USERNAME="veilbox"
+PASSWORD="veilbox"
+
+# Create user
+useradd -m -G sudo,audio,video,plugdev,input -s /bin/bash "$USERNAME"
+echo "$USERNAME:$PASSWORD" | chpasswd
+
+# Allow passwordless sudo for the live session
+cat > /etc/sudoers.d/10-veilbox <<EOF
+veilbox ALL=(ALL) NOPASSWD: ALL
+EOF
+chmod 440 /etc/sudoers.d/10-veilbox
+
+# Add docker group and add user to it
+groupadd -f docker
+usermod -aG docker "$USERNAME"
+
+# Disable root password
+passwd -d root

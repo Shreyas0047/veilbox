@@ -1,0 +1,8 @@
+# Veilbox v2 - Calamares installer (live ISO only)
+calamares
+calamares-settings-debian
+qt5-qpa-platformtheme-plugin
+qml-module-qtquick-controls
+qml-module-qtquick-layouts
+qml-module-qtquick-window2
+qml-module-qtquick2

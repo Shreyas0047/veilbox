@@ -1,0 +1,27 @@
+# Veilbox v2 - Wayland desktop packages
+# Niri compositor (installed via hook if not in repo)
+# Noctalia shell (installed via hook from GitHub releases)
+seatd
+elogind
+xdg-desktop-portal
+xdg-desktop-portal-gtk
+xdg-utils
+foot
+fuzzel
+mako
+wl-clipboard
+fonts-font-awesome
+fonts-noto
+fonts-noto-cjk
+fonts-noto-color-emoji
+pipewire
+pipewire-pulse
+wireplumber
+libspa-0.2-bluetooth
+mesa-utils
+mesa-vulkan-drivers
+libgl1-mesa-dri
+libgl1-mesa-glx
+vulkan-tools
+libvulkan1
+libvulkan-dev

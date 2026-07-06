@@ -1,0 +1,63 @@
+# Veilbox bashrc - colored prompt + aliases
+
+# Colored prompt (cyan user@host, green path)
+PS1='\[\e[38;5;44m\]\u@\h\[\e[0m\]:\[\e[38;5;40m\]\w\[\e[0m\]\$ '
+
+# Colored prompt for root
+if [ "$EUID" -eq 0 ]; then
+    PS1='\[\e[38;5;196m\]\u@\h\[\e[0m\]:\[\e[38;5;40m\]\w\[\e[0m\]# '
+fi
+
+# Better ls
+alias ls='ls --color=auto'
+alias ll='ls -lah'
+alias la='ls -A'
+alias l='ls -CF'
+
+# Colored grep
+alias grep='grep --color=auto'
+alias egrep='egrep --color=auto'
+alias fgrep='fgrep --color=auto'
+
+# Docker shortcuts
+alias dps='docker ps'
+alias dpsa='docker ps -a'
+alias di='docker images'
+alias dexec='docker exec -it'
+alias dlogs='docker logs -f'
+alias dprune='docker system prune -af'
+alias dc='docker compose'
+
+# Kubernetes shortcuts (if kubectl is installed)
+if command -v kubectl &>/dev/null; then
+    alias k='kubectl'
+    alias kg='kubectl get'
+    alias kd='kubectl describe'
+    alias kdel='kubectl delete'
+    alias kl='kubectl logs -f'
+    alias kx='kubectl exec -it'
+fi
+
+# Git shortcuts
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline --graph'
+alias gd='git diff'
+
+# Navigation
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+
+# Safety
+alias rm='rm -i'
+alias cp='cp -i'
+alias mv='mv -i'
+
+# System
+alias df='df -h'
+alias du='du -h'
+alias free='free -h'
+alias ip='ip --color=auto'

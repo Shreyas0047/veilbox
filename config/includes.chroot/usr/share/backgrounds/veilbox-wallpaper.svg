@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#0a0a14"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00d4aa"/>
+      <stop offset="100%" stop-color="#0088cc"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <!-- Diagonal stripe -->
+  <polygon points="0,900 1920,600 1920,660 0,960" fill="url(#accent)" opacity="0.08"/>
+  <polygon points="0,960 1920,660 1920,720 0,1020" fill="url(#accent)" opacity="0.05"/>
+  <!-- Small decorative dots -->
+  <circle cx="200" cy="200" r="2" fill="#00d4aa" opacity="0.3"/>
+  <circle cx="1720" cy="300" r="2" fill="#00d4aa" opacity="0.3"/>
+  <circle cx="1500" cy="850" r="2" fill="#0088cc" opacity="0.3"/>
+  <circle cx="400" cy="700" r="2" fill="#0088cc" opacity="0.3"/>
+  <!-- Logo in bottom-right -->
+  <g transform="translate(1500, 720) scale(4)">
+    <path d="M0-40 L-30-20 L-30 20 C-30 50 -10 65 0 70 C10 65 30 50 30 20 L30-20 Z"
+          fill="none" stroke="url(#accent)" stroke-width="2"/>
+    <polyline points="-20,0 0,25 20,0" fill="none" stroke="url(#accent)" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>
