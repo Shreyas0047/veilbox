@@ -2,6 +2,7 @@ FROM debian:trixie-slim AS veilbox-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     live-build \
+    apt-utils \
     curl \
     ca-certificates \
     gnupg \
