@@ -18,7 +18,7 @@ config/common
 config/installer
 config/source
 config/hooks/normal/
-config/hooks/live/*.hook.chroot
+config/hooks/live/[0-9]*.hook.chroot
 config/package-lists/live.list.chroot
 
 # Linux kernel source tree (unrelated to v2)
