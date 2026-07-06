@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+# Install Docker CE via the official convenience script
+# https://get.docker.com/
+
+curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+sh /tmp/get-docker.sh
+rm -f /tmp/get-docker.sh

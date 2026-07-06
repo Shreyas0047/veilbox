@@ -11,6 +11,7 @@ chroot/
 binary/
 cache/
 .build/
+.lock
 config/binary
 config/bootstrap
 config/chroot

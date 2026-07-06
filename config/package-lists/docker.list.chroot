@@ -1,9 +1,0 @@
-# Veilbox v2 - Docker CE (apt repository added via hook)
-# docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin
-# These packages come from Docker's official apt repo
-# The repo is added by hooks/ docker-ce-repo hook
-docker-ce
-docker-ce-cli
-containerd.io
-docker-buildx-plugin
-docker-compose-plugin
