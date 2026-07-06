@@ -14,7 +14,7 @@ alias dexec='docker exec -it'
 alias dlogs='docker logs -f'
 alias dprune='docker system prune -af'
 alias dc='docker compose'
-if command -v kubectl &>/dev/null; then
+if command -v kubectl >/dev/null 2>&1; then
     alias k='kubectl'
     alias kg='kubectl get'
     alias kd='kubectl describe'

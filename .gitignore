@@ -18,7 +18,8 @@ config/chroot
 config/common
 config/installer
 config/source
-config/hooks/normal/
+config/hooks/normal/*
+!config/hooks/normal/patch-isolinux-timeout.binary
 config/hooks/live/[0-9]*.hook.chroot
 config/package-lists/live.list.chroot
 
@@ -107,3 +108,11 @@ v1/rootfs/usr/bin/wg
 *.pdf
 veilbox-guide.*
 chroot.packages.install
+# Build artifacts
+*.contents
+*.files
+*.packages
+chroot.files
+chroot.packages.live
+chroot.packages.install
+binary.modified_timestamps

@@ -11,10 +11,10 @@ export SDL_VIDEODRIVER=wayland
 export _JAVA_AWT_WM_NONREPARENTING=1
 
 # Start pipewire if available
-if command -v pipewire &>/dev/null && ! pgrep -x pipewire >/dev/null; then
+if command -v pipewire >/dev/null 2>&1 && ! pgrep -x pipewire >/dev/null; then
     pipewire &
 fi
-if command -v wireplumber &>/dev/null && ! pgrep -x wireplumber >/dev/null; then
+if command -v wireplumber >/dev/null 2>&1 && ! pgrep -x wireplumber >/dev/null; then
     wireplumber &
 fi
 

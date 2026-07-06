@@ -19,5 +19,18 @@ chmod 440 /etc/sudoers.d/10-veilbox
 groupadd -f docker
 usermod -aG docker "$USERNAME"
 
+# Auto-start niri session on tty1 login
+cat > "/home/$USERNAME/.bash_profile" <<'EOF'
+#!/bin/bash
+if [ "$(tty)" = "/dev/tty1" ]; then
+    exec niri-session
+fi
+EOF
+chown "$USERNAME:$USERNAME" "/home/$USERNAME/.bash_profile"
+
+# Enable SSH password authentication for debugging
+sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
 # Disable root password
 passwd -d root
