@@ -1,0 +1,107 @@
+// Veilbox v2 — Niri compositor configuration
+// System-wide default config for Veilbox Linux
+
+input {
+    keyboard {
+        xkb-layout "us"
+        xkb-options "ctrl:nocaps"
+    }
+
+    touchpad {
+        tap
+        natural-scroll
+        tap-button-map "left-middle-right"
+    }
+}
+
+layout {
+    gaps 4
+    border {
+        active {
+            color "#00d4aa"
+            width 2
+        }
+        inactive {
+            color "#1a1a2e"
+            width 1
+        }
+    }
+}
+
+preferred-scale 1
+
+window-rule {
+    match any
+    default-column-width { proportional 1; }
+}
+
+// Spawn at startup (pipewire/wireplumber started by niri-session before exec niri)
+spawn-at-startup "xwayland-satellite"
+spawn-at-startup "noctalia"
+spawn-at-startup "mako"
+
+// Environment
+env {
+    "QT_QPA_PLATFORM" "wayland"
+    "GDK_BACKEND" "wayland"
+    "MOZ_ENABLE_WAYLAND" "1"
+    "SDL_VIDEODRIVER" "wayland"
+    "_JAVA_AWT_WM_NONREPARENTING" "1"
+    "XDG_CURRENT_DESKTOP" "niri"
+}
+
+// Keybindings
+binds {
+    // Launcher
+    Mod+D spawn "fuzzel"
+    // Terminal
+    Mod+Return spawn "foot"
+    // Close window
+    Mod+Q close-window
+    // Quit compositor
+    Mod+Shift+Q quit
+    // Fullscreen
+    Mod+F fullscreen-window
+    // Column navigation
+    Mod+H focus-column-left
+    Mod+L focus-column-right
+    Mod+Left focus-column-left
+    Mod+Right focus-column-right
+    // Window navigation
+    Mod+Up focus-window-up
+    Mod+Down focus-window-down
+    // Move windows between columns
+    Mod+Shift+H move-column-left
+    Mod+Shift+L move-column-right
+    Mod+Shift+Left move-column-left
+    Mod+Shift+Right move-column-right
+    // Workspaces
+    Mod+1 focus-workspace 1
+    Mod+2 focus-workspace 2
+    Mod+3 focus-workspace 3
+    Mod+4 focus-workspace 4
+    Mod+5 focus-workspace 5
+    Mod+6 focus-workspace 6
+    Mod+7 focus-workspace 7
+    Mod+8 focus-workspace 8
+    Mod+9 focus-workspace 9
+    // Move windows to workspaces
+    Mod+Shift+1 move-window-to-workspace 1
+    Mod+Shift+2 move-window-to-workspace 2
+    Mod+Shift+3 move-window-to-workspace 3
+    Mod+Shift+4 move-window-to-workspace 4
+    Mod+Shift+5 move-window-to-workspace 5
+    Mod+Shift+6 move-window-to-workspace 6
+    Mod+Shift+7 move-window-to-workspace 7
+    Mod+Shift+8 move-window-to-workspace 8
+    Mod+Shift+9 move-window-to-workspace 9
+    // Workspace scrolling
+    Mod+WheelScrollUp focus-workspace-up
+    Mod+WheelScrollDown focus-workspace-down
+    // Consume window to full column width
+    Mod+Space consume-or-expand-window
+    // Screenshot
+    Mod+Shift+S spawn "grim -g \"$(slurp)\" /home/veilbox/Pictures/Screenshots/screenshot-$(date +%Y%m%d-%H%M%S).png"
+    // Screenshot all
+    Print spawn "grim /home/veilbox/Pictures/Screenshots/screenshot-$(date +%Y%m%d-%H%M%S).png"
+}
