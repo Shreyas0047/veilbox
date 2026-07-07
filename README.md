@@ -28,12 +28,12 @@
   </p>
 
   <p>
-    <img alt="Kernel" src="https://img.shields.io/badge/Kernel-6.12%20cloud--amd64-2666CC?style=flat-square">
+    <img alt="Kernel" src="https://img.shields.io/badge/Kernel-6.12%20amd64-2666CC?style=flat-square">
     <img alt="Compositor" src="https://img.shields.io/badge/WM-Niri-6A0DAD?style=flat-square">
     <img alt="Shell" src="https://img.shields.io/badge/Shell-Noctalia-FF6B6B?style=flat-square">
     <img alt="Installer" src="https://img.shields.io/badge/Installer-Calamares-4CAF50?style=flat-square">
     <img alt="Container" src="https://img.shields.io/badge/Container-Docker-2496ED?style=flat-square&logo=docker">
-    <img alt="ISO" src="https://img.shields.io/badge/ISO-1.6%20GB-FF5722?style=flat-square">
+    <img alt="ISO" src="https://img.shields.io/badge/ISO-2.0%20GB-FF5722?style=flat-square">
   </p>
 
   <br>
@@ -67,16 +67,16 @@
 
 ## Features
 
-- **Debian Trixie base** — Built with `live-build`, using `linux-image-cloud-amd64` kernel
-- **Niri compositor** — Scrollable-tiling Wayland compositor for a unique multi-monitor workflow
-- **Noctalia shell** — Minimal, keyboard-driven shell environment (v5 beta)
+- **Debian Trixie base** — Built with `live-build`, using the full `linux-image-amd64` kernel with all GPU/driver support
+- **Niri compositor** — Scrollable-tiling Wayland compositor for a unique multi-monitor workflow, with Noctalia auto-started as the shell
+- **Noctalia shell** — Minimal, keyboard-driven shell environment (v5 beta) auto-launched via `spawn-at-startup` in the niri config
 - **Docker CE** — Container runtime pre-installed via `get.docker.com`
 - **DevOps toolchain** — 20+ pre-installed tools: Helm, Terraform, Ansible, AWS CLI, Azure CLI, GitHub CLI, kubectl*, and more
 - **Calamares installer** — Graphical installer for persistent installations
 - **Systemd init** — Modern init system with NetworkManager, SSH, and Docker socket management
-- **Auto-login** — Boots directly into the desktop on tty1
+- **Auto-login** — Boots directly into the Niri+Noctalia desktop on tty1
+- **Full hardware support** — Desktop kernel with Intel/AMD/NVIDIA GPU drivers, XWayland, PipeWire audio, Bluetooth, power management
 - **Custom branding** — Dark-themed GRUB menu, Veilbox wallpaper, ASCII MOTD, colored bash prompt with aliases
-- **Lightweight** — ~1.6 GB ISO with XZ-compressed squashfs
 
 > \* kubectl and trivy are attempted during build; skipped if GitHub releases are unreachable (DNS/cert issues in chroot)
 
@@ -87,7 +87,7 @@
 | Component | Detail |
 |---|---|
 | **Base OS** | Debian Trixie (13) — amd64 |
-| **Kernel** | `linux-image-cloud-amd64` (6.12.y) — Debian Cloud kernel |
+| **Kernel** | `linux-image-amd64` (6.12.y) — Debian full desktop kernel (i915, amdgpu, nouveau, all GPU/audio/network drivers) |
 | **Compositor** | [Niri](https://github.com/niri-wm/niri) — community `.deb` from `Alexvs159/niri-debian` |
 | **Shell/Panel** | [Noctalia](https://noctalia.dev) v5 — official APT repo `pkg.noctalia.dev/apt` |
 | **Launcher** | Fuzzel (Wayland-native app launcher) |
@@ -100,7 +100,7 @@
 | **Installer** | Calamares 3.3 (graphical, binary-only on ISO) |
 | **Init** | systemd |
 | **Bootloader** | ISOLINUX + GRUB (Legacy + EFI) |
-| **Image** | Live ISO, ~1.6 GB, XZ-compressed squashfs |
+| **Image** | Live ISO, ~2.0 GB, XZ-compressed squashfs |
 
 ### Boot Parameters (default)
 
@@ -151,6 +151,9 @@ timezone=UTC
 | `grub-pc` + `grub-efi-*` + `shim-signed` | Bootloader (Legacy + UEFI Secure Boot) |
 | `firmware-linux` + `firmware-sof-signed` | Hardware firmware |
 | `intel-microcode` + `amd64-microcode` | CPU microcode |
+| `bluez` | Bluetooth stack |
+| `upower` + `power-profiles-daemon` | Power management |
+| `polkit-kde-agent-1` | PolicyKit authentication agent |
 
 ### Desktop
 
@@ -161,8 +164,16 @@ timezone=UTC
 | `mako-notifier` | Notification daemon |
 | `wl-clipboard` | Clipboard utilities |
 | `grim` + `slurp` | Screenshot + region selection |
-| `xdg-desktop-portal` + `xdg-desktop-portal-gtk` | Desktop portal |
-| `fonts-font-awesome`, `fonts-noto*`, `fonts-noto-color-emoji` | Fonts |
+| `xdg-desktop-portal` + `xdg-desktop-portal-gtk` + `xdg-desktop-portal-wlr` | Desktop portals |
+| `xwayland` + `xserver-xorg-core` | X11 app compatibility |
+| `xserver-xorg-video-all` + `xserver-xorg-input-all` | Xorg GPU + input drivers |
+| `mesa-va-drivers` | VA-API video acceleration |
+| `pipewire-alsa` | ALSA audio compatibility |
+| `bluez` | Bluetooth stack |
+| `upower` + `power-profiles-daemon` | Power management |
+| `polkit-kde-agent-1` | PolicyKit authentication agent |
+| `fonts-font-awesome`, `fonts-noto*`, `fonts-noto-color-emoji`, `fonts-liberation` | Fonts |
+| `adwaita-icon-theme` + `papirus-icon-theme` | Icon themes |
 
 ### Calamares Installer
 
@@ -207,14 +218,15 @@ veilbox/
 │   │       └── patch-isolinux-timeout.binary
 │   ├── includes.chroot/     # Filesystem overlay
 │   │   ├── etc/
+│   │   │   ├── xdg/niri/    # Niri compositor config (Noctalia spawn, keybindings)
 │   │   │   ├── calamares/   # Calamares configuration
 │   │   │   ├── motd         # Message of the day
 │   │   │   ├── update-motd.d/
-│   │   │   ├── skel/        # Skeleton (.bashrc, etc.)
+│   │   │   ├── skel/        # Skeleton (.bashrc, .config/niri/)
 │   │   │   ├── default/     # Default config files
 │   │   │   └── systemd/     # Systemd drop-ins (auto-login)
-│   │   ├── home/veilbox/    # User home directory
-│   │   ├── usr/             # Scripts, wallpapers
+│   │   ├── home/veilbox/    # User home directory (.bash_profile)
+│   │   ├── usr/             # Scripts, wallpapers, wayland-sessions
 │   │   └── boot/grub/       # GRUB theme
 │   └── includes.binary/     # Binary-stage includes
 ├── branding/                # Source assets (logo, wallpaper, GRUB theme)
@@ -315,18 +327,24 @@ The live ISO auto-logs in as `veilbox` on tty1 and starts the Niri desktop sessi
 
 ### Desktop Session
 
-The `.bash_profile` for `veilbox` detects tty1 and launches `niri-session`, which starts:
+The `.bash_profile` for `veilbox` detects tty1 and launches `niri-session`, which starts `pipewire` and `wireplumber`, then `exec niri`. Once niri loads, it reads `/etc/xdg/niri/config.kdl` and auto-starts:
 
-1. `pipewire` (audio daemon)
-2. `wireplumber` (session manager)
-3. `niri` (Wayland compositor)
+1. `xwayland-satellite` — X11 app compatibility layer
+2. `noctalia` — Shell/panel bar
+3. `mako` — Desktop notification daemon
 
 The niri configuration includes:
-- Noctalia as the bar/shell
+- Noctalia auto-launched as the shell/panel (`spawn-at-startup "noctalia"`)
 - Fuzzel as the app launcher (Mod+D)
 - Foot as the default terminal (Mod+Enter)
 - Mako for desktop notifications
-- Custom keybindings for workspace management
+- Workspace switching (Mod+1-9) and window movement (Mod+Shift+1-9)
+- Consume-or-expand-window (Mod+Space)
+- Screenshot with grim+slurp (Mod+Shift+S) or fullscreen (Print)
+- Fullscreen toggle (Mod+F)
+- Column-based window navigation (Mod+H/L/Up/Down)
+- Touchpad tap-to-click and natural scrolling
+- Wayland environment variables (QT_QPA_PLATFORM, GDK_BACKEND, MOZ_ENABLE_WAYLAND)
 
 ### Networking
 
@@ -337,7 +355,7 @@ The niri configuration includes:
 ### Boot Process
 
 1. ISOLINUX loads and auto-selects the `live-cloud-amd64` entry (5-second timeout)
-2. Kernel boots with `linux-image-cloud-amd64`
+2. Kernel boots with `linux-image-amd64` (full desktop kernel with all GPU/driver support)
 3. Initramfs detects the squashfs on the live media
 4. Systemd initializes with live-config for user/locale setup
 5. Getty auto-logs in as `veilbox` on tty1
