@@ -10,7 +10,40 @@ export MOZ_ENABLE_WAYLAND=1
 export SDL_VIDEODRIVER=wayland
 export _JAVA_AWT_WM_NONREPARENTING=1
 
+# XDG_RUNTIME_DIR must be set for Wayland sockets; logind sets it normally
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+
 # PipeWire and WirePlumber are started by systemd --user services.
 # Do NOT start them manually here to avoid lock conflicts.
 
-exec niri
+mkdir -p /tmp/veilbox
+
+# Log pre-start diagnostics
+{
+    echo "=== niri-session start: $(date) ==="
+    echo "USER: $(whoami)  UID: $(id -u)  GROUPS: $(groups)"
+    echo "TTY: $(tty)"
+    echo "XDG_RUNTIME_DIR: $XDG_RUNTIME_DIR"
+    ls -la /dev/dri/ 2>&1
+    stat /dev/dri/card0 2>&1 || echo "no /dev/dri/card0"
+    cat /proc/version 2>&1
+    dmesg 2>&1 | grep -iE 'drm|gpu|vga|fb|modeset' | tail -30
+    echo "---"
+} > /tmp/veilbox/session-start.log 2>&1
+
+# Start niri, capture all output
+niri "$@" 2>&1 | tee -a /tmp/veilbox/session-start.log
+RC=$?
+
+# If niri exited (normal quit or crash), log and fall back to shell
+{
+    echo "=== niri exited with code $RC at $(date) ==="
+    echo "dmesg (last 20 drm/gpu lines):"
+    dmesg 2>&1 | grep -iE 'drm|gpu|vga|fb|modeset' | tail -20
+} >> /tmp/veilbox/session-start.log 2>&1
+
+# Brief pause so user can read the last messages
+sleep 3
+
+# Drop to login shell for debugging
+exec /bin/bash --login

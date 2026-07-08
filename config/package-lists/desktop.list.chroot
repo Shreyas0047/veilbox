@@ -53,3 +53,10 @@ qml-module-qtquick-controls
 qml-module-qtquick-layouts
 qml-module-qtquick-window2
 qml-module-qtquick2
+# GPU firmware for real hardware support
+firmware-linux
+firmware-amd-graphics
+firmware-iwlwifi
+iucode-tool
+# GPU diagnostic utility
+libgles2

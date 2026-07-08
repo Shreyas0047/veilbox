@@ -35,10 +35,19 @@ window-rule {
     default-column-width { proportional 1; }
 }
 
-// Spawn at startup (pipewire/wireplumber started by niri-session before exec niri)
+// Spawn at startup (pipewire/wireplumber handled by systemd --user)
 spawn-at-startup "xwayland-satellite"
 spawn-at-startup "noctalia"
 spawn-at-startup "mako"
+
+// Solid background so it's obvious when niri is running
+output "eDP-1" { background-color "#1a1a2e"; }
+output "eDP-2" { background-color "#1a1a2e"; }
+output "HDMI-A-1" { background-color "#1a1a2e"; }
+output "HDMI-A-2" { background-color "#1a1a2e"; }
+output "DP-1" { background-color "#1a1a2e"; }
+output "DP-2" { background-color "#1a1a2e"; }
+output "Virtual-1" { background-color "#1a1a2e"; }
 
 // Environment
 env {
