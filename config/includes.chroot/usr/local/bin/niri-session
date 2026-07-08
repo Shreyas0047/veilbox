@@ -10,18 +10,7 @@ export MOZ_ENABLE_WAYLAND=1
 export SDL_VIDEODRIVER=wayland
 export _JAVA_AWT_WM_NONREPARENTING=1
 
-# Clean stale PipeWire locks from previous sessions
-rm -f /run/user/*/pipewire-0.lock 2>/dev/null || true
-
-# Start pipewire if available
-if command -v pipewire >/dev/null 2>&1 && ! pgrep -x pipewire >/dev/null; then
-    pipewire &
-fi
-if command -v wireplumber >/dev/null 2>&1 && ! pgrep -x wireplumber >/dev/null; then
-    wireplumber &
-fi
-
-# Wait for session to be ready
-sleep 1
+# PipeWire and WirePlumber are started by systemd --user services.
+# Do NOT start them manually here to avoid lock conflicts.
 
 exec niri
