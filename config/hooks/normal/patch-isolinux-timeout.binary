@@ -2,7 +2,7 @@
 # CWD is binary/ when hook runs
 
 # Auto-boot default live entry directly (skip menu) for serial console compatibility
-sed -i 's/default .*/default live-cloud-amd64/' isolinux/isolinux.cfg
+sed -i 's/default .*/default live-amd64/' isolinux/isolinux.cfg
 
 # Set a short timeout in case the auto-entry fails
 sed -i 's/timeout 0/timeout 50/' isolinux/isolinux.cfg

@@ -1,9 +1,8 @@
 #!/bin/sh
 set -e
 
-# Remove any broken packages that might block apt operations
-dpkg --remove --force-depends google-cloud-cli google-cloud-sdk 2>/dev/null || true
-dpkg --configure -a 2>/dev/null || true
+# Ensure any broken packages don't block apt operations
+dpkg --configure -a --force-depends 2>/dev/null || true
 
 # Install Docker CE via the official convenience script
 curl -fsSL https://get.docker.com -o /tmp/get-docker.sh

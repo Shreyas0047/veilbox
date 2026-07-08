@@ -35,6 +35,6 @@ $RUNTIME run --rm \
     -v "$REPO_DIR:/repo:Z" \
     -v "$OUTPUT_DIR:/repo/output:Z" \
     "$IMAGE" \
-    "cd /repo && ./build.sh $BUILD_CMD"
+    -c "cd /repo && bash ./build.sh $BUILD_CMD"
 
 echo "==> Build complete. ISO in: $OUTPUT_DIR"

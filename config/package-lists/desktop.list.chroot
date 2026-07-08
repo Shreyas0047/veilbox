@@ -17,6 +17,7 @@ fonts-noto-color-emoji
 pipewire
 pipewire-pulse
 wireplumber
+rtkit
 libspa-0.2-bluetooth
 mesa-utils
 mesa-vulkan-drivers
@@ -39,3 +40,15 @@ xdg-desktop-portal-wlr
 fonts-liberation
 adwaita-icon-theme
 papirus-icon-theme
+# SPICE agent for QEMU/KVM (folder sharing, clipboard, display autoconfig)
+spice-vdagent
+# VirtualBox Guest Additions module is in-kernel (vboxguest.ko, vboxsf.ko, vboxvideo.ko)
+# Userspace VBoxService not packaged for Trixie; use VirtualBox 'Insert Guest Additions CD'
+# Calamares installer (in chroot so it's available on live desktop AND installed system)
+calamares
+calamares-settings-debian
+qt5-gtk-platformtheme
+qml-module-qtquick-controls
+qml-module-qtquick-layouts
+qml-module-qtquick-window2
+qml-module-qtquick2

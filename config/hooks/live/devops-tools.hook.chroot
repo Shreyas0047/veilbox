@@ -23,23 +23,39 @@ download_gh_release() {
     local version="${4:-latest}"
 
     local url
+    local ua="Veilbox/2.0"
     if [ "$version" = "latest" ]; then
-        url=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
-            | grep "browser_download_url.*${pattern}" \
+        # GitHub API returns single-line JSON; use grep -o to extract URL value
+        url=$(curl -fsSL -H "User-Agent: ${ua}" "https://api.github.com/repos/${repo}/releases/latest" \
+            | grep -o '"browser_download_url":"[^"]*"' \
+            | grep "${pattern}" \
             | head -1 \
-            | cut -d: -f2- \
-            | tr -d ' "')
+            | cut -d'"' -f4)
     else
         url="https://github.com/${repo}/releases/download/v${version}/${pattern}"
     fi
 
     [ -z "$url" ] && return 1
 
-    curl -fsSL "$url" -o "download"
+    curl -fsSL --connect-timeout 15 --max-time 120 "$url" -o "download"
     case "$url" in
         *.tar.gz)
-            tar xzf "download" -C "$TOOLS_DIR" "$output" 2>/dev/null \
-                || { tar xzf "download" && cp "$output" "$TOOLS_DIR/" 2>/dev/null; true; }
+            if tar xzf "download" -C "$TOOLS_DIR" "$output" 2>/dev/null; then
+                : # exact extraction succeeded
+            else
+                tar xzf "download" 2>/dev/null
+                find . -name "$output" -type f -exec cp {} "$TOOLS_DIR/" \; 2>/dev/null
+                if [ ! -f "$TOOLS_DIR/$output" ]; then
+                    _best="" _best_sz=0
+                    for _f in $(find . -type f 2>/dev/null); do
+                        _sz=$(stat -c%s "$_f" 2>/dev/null || echo 0)
+                        if [ "$_sz" -gt "$_best_sz" ] 2>/dev/null; then
+                            _best="$_f"; _best_sz=$_sz
+                        fi
+                    done
+                    [ -n "$_best" ] && cp "$_best" "$TOOLS_DIR/$output" 2>/dev/null
+                fi
+            fi || true
             ;;
         *.gz)
             gunzip -c "download" > "$TOOLS_DIR/$output"
@@ -49,16 +65,36 @@ download_gh_release() {
             ;;
     esac
     chmod +x "$TOOLS_DIR/$output" 2>/dev/null || true
-    echo "  $name installed"
+    if [ -f "$TOOLS_DIR/$output" ]; then
+        echo "  $name installed"
+    else
+        echo "  [WARN] $name extraction failed"
+        return 1
+    fi
 }
 
-# kubectl
-try_install "kubectl" download_gh_release "kubernetes/kubernetes" \
-    "linux-${ARCH}/kubectl" "kubectl" \
-    "$(curl -fsSL https://cdn.dl.k8s.io/release/stable.txt | sed 's/^v//')"
+# kubectl (download binary from dl.k8s.io — GitHub releases don't include binaries)
+try_install "kubectl" sh -c '
+    _ver=$(curl -fsSL --max-time 10 "https://github.com/kubernetes/kubernetes/releases/latest" 2>/dev/null | grep -o "v[0-9]*\.[0-9]*\.[0-9]*" | head -1 | sed "s/^v//")
+    [ -z "$_ver" ] && _ver="1.36.2"
+    curl -fsSL --connect-timeout 15 --max-time 120 "https://dl.k8s.io/release/v${_ver}/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl 2>/dev/null || \
+    curl -fsSL --connect-timeout 15 --max-time 120 "https://dl.k8s.io/release/stable.txt/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl 2>/dev/null
+    chmod +x /usr/local/bin/kubectl 2>/dev/null
+    [ -f /usr/local/bin/kubectl ]
+'
 
-# Helm
-try_install "helm" download_gh_release "helm/helm" "linux-${ARCH}.tar.gz" "helm"
+# Helm (direct download — GitHub release assets don't include the binary tarball)
+try_install "helm" sh -c '
+    _ver=$(curl -fsSL --max-time 10 "https://github.com/helm/helm/releases/latest" 2>/dev/null | grep -o "v[0-9]*\.[0-9]*\.[0-9]*" | head -1)
+    [ -z "$_ver" ] && _ver="v4.2.2"
+    curl -fsSL --connect-timeout 15 --max-time 120 "https://get.helm.sh/helm-${_ver}-linux-amd64.tar.gz" -o /tmp/helm.tar.gz
+    mkdir -p /tmp/helm-extract
+    tar xzf /tmp/helm.tar.gz -C /tmp/helm-extract linux-amd64/helm 2>/dev/null || tar xzf /tmp/helm.tar.gz -C /tmp/helm-extract 2>/dev/null
+    cp /tmp/helm-extract/linux-amd64/helm /usr/local/bin/helm 2>/dev/null || cp /tmp/helm-extract/helm /usr/local/bin/helm 2>/dev/null
+    chmod +x /usr/local/bin/helm 2>/dev/null
+    rm -rf /tmp/helm.tar.gz /tmp/helm-extract
+    [ -f /usr/local/bin/helm ]
+'
 
 # yq
 try_install "yq" download_gh_release "mikefarah/yq" "linux_${ARCH}.tar.gz" "yq"
@@ -66,8 +102,8 @@ try_install "yq" download_gh_release "mikefarah/yq" "linux_${ARCH}.tar.gz" "yq"
 # dive
 try_install "dive" download_gh_release "wagoodman/dive" "linux_${ARCH}.tar.gz" "dive"
 
-# trivy
-try_install "trivy" download_gh_release "aquasecurity/trivy" "Linux-${ARCH}.tar.gz" "trivy"
+# trivy (asset uses "64bit" not "amd64")
+try_install "trivy" download_gh_release "aquasecurity/trivy" "Linux-64bit.tar.gz" "trivy"
 
 # k9s
 try_install "k9s" download_gh_release "derailed/k9s" "Linux_${ARCH}.tar.gz" "k9s"
@@ -117,16 +153,18 @@ try_install "azure-cli" sh -c "
     apt-get update -qq 2>/dev/null && apt-get install -y -qq azure-cli 2>/dev/null
 "
 
-# Google Cloud CLI (disabled: /dev/urandom not available in chroot postinst)
+# Google Cloud CLI (disabled: Python postinst needs /dev/urandom which is unavailable in
+# debootstrap chroot; even mknod + mount --bind don't work in this environment)
 # try_install "gcloud" sh -c "
 #     echo 'deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main' > /etc/apt/sources.list.d/google-cloud-sdk.list
 #     curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg 2>/dev/null
-#     apt-get update -qq 2>/dev/null && PYTHONHASHSEED=0 apt-get install -y -qq google-cloud-sdk 2>/dev/null
+#     apt-get update -qq 2>/dev/null
+#     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq google-cloud-cli 2>/dev/null || true
 # "
 
-# Clean up any broken packages from partial installs
-dpkg --remove --force-depends google-cloud-cli google-cloud-sdk 2>/dev/null || true
-dpkg --configure -a 2>/dev/null || true
+# Purge any broken gcloud packages that might block apt in subsequent hooks
+dpkg --purge --force-depends google-cloud-cli google-cloud-sdk 2>/dev/null || true
+dpkg --configure -a --force-depends 2>/dev/null || true
 
 # Cleanup
 apt-get clean -qq 2>/dev/null || true

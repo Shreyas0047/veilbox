@@ -33,7 +33,7 @@ EOF
 cmd_clean() {
     echo "==> Cleaning build artifacts..."
     sudo lb clean --purge 2>/dev/null || true
-    rm -rf "$OUTPUT_DIR"
+    rm -rf "$OUTPUT_DIR" 2>/dev/null || true
 }
 
 cmd_config() {

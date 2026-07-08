@@ -10,6 +10,9 @@ export MOZ_ENABLE_WAYLAND=1
 export SDL_VIDEODRIVER=wayland
 export _JAVA_AWT_WM_NONREPARENTING=1
 
+# Clean stale PipeWire locks from previous sessions
+rm -f /run/user/*/pipewire-0.lock 2>/dev/null || true
+
 # Start pipewire if available
 if command -v pipewire >/dev/null 2>&1 && ! pgrep -x pipewire >/dev/null; then
     pipewire &

@@ -5,8 +5,12 @@ set -e
 USERNAME="veilbox"
 PASSWORD="veilbox"
 
-# Create user
-useradd -m -G sudo,audio,video,plugdev,input -s /bin/bash "$USERNAME"
+# Create user; ensure home dir ownership even if includes.chroot pre-created it
+mkdir -p "/home/$USERNAME"
+useradd -m -G sudo,audio,video,plugdev,input -s /bin/bash "$USERNAME" 2>/dev/null
+# Copy skel files if useradd -m skipped them (pre-existing home dir from includes.chroot)
+cp -rT /etc/skel "/home/$USERNAME" 2>/dev/null || true
+chown -R "$USERNAME:$USERNAME" "/home/$USERNAME"
 echo "$USERNAME:$PASSWORD" | chpasswd
 
 # Allow passwordless sudo for the live session
@@ -25,12 +29,16 @@ cat > "/home/$USERNAME/.bash_profile" <<'EOF'
 if [ "$(tty)" = "/dev/tty1" ]; then
     exec niri-session
 fi
+[ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
 EOF
 chown "$USERNAME:$USERNAME" "/home/$USERNAME/.bash_profile"
 
 # Enable SSH password authentication for debugging
 sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+# Ensure niri session launcher is executable
+chmod +x /usr/local/bin/niri-session 2>/dev/null || true
 
 # Disable root password
 passwd -d root
