@@ -11,7 +11,7 @@ lb config noauto \
     --mirror-chroot-security "http://security.debian.org/debian-security" \
     --mirror-binary-security "http://security.debian.org/debian-security" \
     --debian-installer false \
-    --bootappend-live "boot=live components console=ttyS0,115200n8 username=veilbox locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC persistence drm.debug=0x1ff loglevel=7 fbcon=nodefer" \
+    --bootappend-live "boot=live components quiet console=ttyS0,115200n8 username=veilbox locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC persistence loglevel=6 modprobe.blacklist=nouveau" \
     --bootappend-live-failsafe "boot=live components quiet noapath noapic" \
     --linux-packages "linux-image" \
     --linux-flavours "amd64" \

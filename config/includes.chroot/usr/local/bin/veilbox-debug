@@ -1,0 +1,26 @@
+#!/bin/sh
+echo "=== Veilbox Debug Info ==="
+echo ""
+echo "1. Niri session log:"
+cat /tmp/veilbox/session-start.log 2>/dev/null || echo "(no session log found)"
+echo ""
+echo "2. DRM devices:"
+ls -la /dev/dri/ 2>&1
+echo ""
+echo "3. GPU info:"
+lspci -k 2>/dev/null | grep -i -A3 'vga\|3d\|display'
+echo ""
+echo "4. Loaded DRM modules:"
+lsmod 2>/dev/null | grep -iE 'drm|i915|amdgpu|nouveau|nvidia|virtio'
+echo ""
+echo "5. Kernel DRM messages:"
+dmesg 2>/dev/null | grep -iE 'drm|gpu|vga|fb|modeset' | tail -30
+echo ""
+echo "6. logind sessions:"
+loginctl list-sessions 2>/dev/null || echo "(loginctl not available)"
+echo ""
+echo "7. User groups:"
+groups
+echo ""
+echo "8. XDG_RUNTIME_DIR:"
+echo "${XDG_RUNTIME_DIR:-not set}"
