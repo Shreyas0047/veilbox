@@ -27,14 +27,7 @@ usermod -aG docker "$USERNAME"
 cat > "/home/$USERNAME/.bash_profile" <<'VEILBOX_EOF'
 #!/bin/bash
 if [ "$(tty)" = "/dev/tty1" ]; then
-    echo ""
-    echo "Starting Veilbox desktop in 3 seconds..."
-    echo "Press Ctrl+C to cancel and get a shell."
-    echo ""
-    sleep 3 && niri-session
-    echo ""
-    echo "Desktop session ended. Start it again with: niri-session"
-    echo ""
+    exec niri-session
 fi
 [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"
 VEILBOX_EOF
