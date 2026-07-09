@@ -2,7 +2,7 @@
 Type=Application
 Name=Install Veilbox
 Comment=Install Veilbox Linux on this computer
-Exec=calamares -d
+Exec=pkexec calamares -d
 Icon=calamares
 Terminal=false
 Categories=System;Installer;

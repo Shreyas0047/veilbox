@@ -5,9 +5,9 @@
     <img alt="Veilbox" src="branding/logo.svg" width="120" height="120">
   </picture>
 
-  <h1>Veilbox</h1>
+  <h1>Veilbox Linux</h1>
 
-  <p><strong>Minimal · Container-native · DevOps-ready</strong></p>
+  <p><strong>Container-native live distribution · Niri + Noctalia · DevOps-ready</strong></p>
 
   <p>
     <a href="#-features">
@@ -33,52 +33,43 @@
     <img alt="Shell" src="https://img.shields.io/badge/Shell-Noctalia-FF6B6B?style=flat-square">
     <img alt="Installer" src="https://img.shields.io/badge/Installer-Calamares-4CAF50?style=flat-square">
     <img alt="Container" src="https://img.shields.io/badge/Container-Docker-2496ED?style=flat-square&logo=docker">
-    <img alt="ISO" src="https://img.shields.io/badge/ISO-2.0%20GB-FF5722?style=flat-square">
+    <img alt="ISO" src="https://img.shields.io/badge/ISO-1.8%20GB-FF5722?style=flat-square">
   </p>
 
   <br>
 
-  <p><em>A lightweight Debian-based live distribution with the <a href="https://github.com/niri-wm/niri">Niri</a> scrolling compositor, <a href="https://noctalia.dev">Noctalia</a> shell, and a full DevOps toolchain — packaged as a bootable live ISO with Calamares installer.</em></p>
-
-  <br>
-
-  <pre>
-               .                    .
-            .   *  .  _  .  *   .
-         .    .    /_\    .    .
-   .   *    .   . /___\ .   .    *   .
-     .    .    __/_____\__    .    .
-  .     .  .-'           '-.  .     .
-         /                 \
-  .    . |   V E I L B O X | .    .
-        |    v2  (Trixie)   |
-  .    . \                 / .    .
-         '-._           _.-'
-  .    *     '---------+      *    .
-         .     |  ||  |     .
-      *     .  |  ||  |  .     *
-            .  |__||__|  .
-               |________|
-  </pre>
-
 </div>
+
+Veilbox is a live Linux distribution built on Debian Trixie, designed for developers and DevOps practitioners who want a minimal, keyboard-driven Wayland desktop with a full container-native toolchain. It boots directly into the [Niri](https://github.com/niri-wm/niri) scrollable-tiling compositor with the [Noctalia](https://noctalia.dev) shell, Docker, Kubernetes tooling, and cloud CLIs — all on a ~1.8 GB live ISO.
+
+---
+
+## Table of Contents
+
+- [Features](#-features)
+- [Specifications](#-specifications)
+- [Included Tooling](#-included-tooling)
+- [Architecture](#-architecture)
+- [Build from Source](#-build-from-source)
+- [Usage](#-usage)
+- [License](#-license)
 
 ---
 
 ## Features
 
-- **Debian Trixie base** — Built with `live-build`, using the full `linux-image-amd64` kernel with all GPU/driver support
-- **Niri compositor** — Scrollable-tiling Wayland compositor for a unique multi-monitor workflow, with Noctalia auto-started as the shell
-- **Noctalia shell** — Minimal, keyboard-driven shell environment (v5 beta) auto-launched via `spawn-at-startup` in the niri config
-- **Docker CE** — Container runtime pre-installed via `get.docker.com`
-- **DevOps toolchain** — 20+ pre-installed tools: Helm, Terraform, Ansible, AWS CLI, Azure CLI, GitHub CLI, kubectl*, and more
-- **Calamares installer** — Graphical installer for persistent installations
-- **Systemd init** — Modern init system with NetworkManager, SSH, and Docker socket management
-- **Auto-login** — Boots directly into the Niri+Noctalia desktop on tty1
-- **Full hardware support** — Desktop kernel with Intel/AMD/NVIDIA GPU drivers, XWayland, PipeWire audio, Bluetooth, power management
-- **Custom branding** — Dark-themed GRUB menu, Veilbox wallpaper, ASCII MOTD, colored bash prompt with aliases
-
-> \* kubectl and trivy are attempted during build; skipped if GitHub releases are unreachable (DNS/cert issues in chroot)
+| Area | Description |
+|---|---|
+| **Base OS** | Debian Trixie (13) — stable, wide hardware support, live-build infrastructure |
+| **Compositor** | [Niri](https://github.com/niri-wm/niri) — scrollable-tiling Wayland compositor, fluid multi-monitor workflow |
+| **Shell** | [Noctalia](https://noctalia.dev) — keyboard-driven desktop shell, auto-launched by niri |
+| **Container Runtime** | Docker CE + containerd — pre-installed for immediate container workloads |
+| **DevOps Toolchain** | 20+ pre-installed tools: kubectl, Helm, Terraform, Ansible, AWS CLI, Azure CLI, GitHub CLI, k9s, stern, kind, minikube, and more |
+| **Installer** | Calamares graphical installer for permanent installations |
+| **Keyboard-driven** | Fuzzel app launcher (Mod+D), foot terminal (Mod+Return), full niri keybindings for window/workspace management |
+| **Full Hardware Support** | Debian desktop kernel (i915, amdgpu, nouveau), PipeWire audio, Bluetooth, power management |
+| **Auto-Login** | Boots directly into the desktop on tty1; SSH access on ttyS0 for serial debugging |
+| **Robust Fallback** | Niri session watchdog restores text-mode console on compositor crash or timeout |
 
 ---
 
@@ -87,107 +78,89 @@
 | Component | Detail |
 |---|---|
 | **Base OS** | Debian Trixie (13) — amd64 |
-| **Kernel** | `linux-image-amd64` (6.12.y) — Debian full desktop kernel (i915, amdgpu, nouveau, all GPU/audio/network drivers) |
-| **Compositor** | [Niri](https://github.com/niri-wm/niri) — community `.deb` from `Alexvs159/niri-debian` |
-| **Shell/Panel** | [Noctalia](https://noctalia.dev) v5 — official APT repo `pkg.noctalia.dev/apt` |
-| **Launcher** | Fuzzel (Wayland-native app launcher) |
-| **Terminal** | Foot (Wayland-native terminal emulator) |
-| **Notifications** | Mako (Wayland-native notification daemon) |
-| **Audio** | PipeWire + WirePlumber |
-| **Clipboard** | wl-clipboard (Wayland clipboard utilities) |
-| **Screenshots** | grim + slurp (Wayland screenshot/region tools) |
-| **Container** | Docker CE (via convenience script) + containerd |
+| **Kernel** | `linux-image-amd64` (6.12) — full desktop kernel with all GPU/audio/network drivers |
+| **Compositor** | [Niri](https://github.com/niri-wm/niri) 26.04 — community `.deb` from `alexvs159/niri-debian` |
+| **Shell** | [Noctalia](https://noctalia.dev) v5 — official APT repo |
+| **Launcher** | [Fuzzel](https://codeberg.org/dnkl/fuzzel) — Wayland-native app launcher |
+| **Terminal** | [Foot](https://codeberg.org/dnkl/foot) + XTerm — Wayland-native and X11 fallback |
+| **Notifications** | [Mako](https://github.com/emersion/mako) — Wayland notification daemon |
+| **Audio** | PipeWire + WirePlumber + ALSA compatibility |
+| **Clipboard** | wl-clipboard |
+| **Screenshots** | grim + slurp |
+| **Container** | Docker CE + containerd + Docker Compose plugin |
 | **Installer** | Calamares 3.3 (graphical, binary-only on ISO) |
 | **Init** | systemd |
-| **Bootloader** | ISOLINUX + GRUB (Legacy + EFI) |
-| **Image** | Live ISO, ~2.0 GB, XZ-compressed squashfs |
+| **Bootloader** | ISOLINUX + GRUB (Legacy BIOS + UEFI) |
+| **Image Size** | ~1.8 GB, XZ-compressed squashfs |
 
-### Boot Parameters (default)
+### Kernel Command Line
 
 ```
-boot=live components quiet splash
-username=veilbox
-locales=en_US.UTF-8
-keyboard-layouts=us
-timezone=UTC
+boot=live components quiet splash console=tty0 console=ttyS0,115200n8
+username=veilbox locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC
 ```
+
+- `console=tty0` ensures a local getty (login prompt) on the laptop display
+- `console=ttyS0` enables serial console for headless debugging
 
 ---
 
 ## Included Tooling
 
-### DevOps & Cloud
+### Container & Orchestration
 
-| Tool | Source | Notes |
+| Tool | Source | Purpose |
 |---|---|---|
-| **kubectl** | GitHub Releases (kubernetes/kubernetes) | Skipped if DNS unavailable |
-| **Helm** | GitHub Releases (helm/helm) | |
-| **Terraform** | HashiCorp APT repo | |
-| **Ansible** | Debian repo | Core, no playbooks |
-| **yq** | GitHub Releases (mikefarah/yq) | YAML processor |
-| **dive** | GitHub Releases (wagoodman/dive) | Docker image layer inspector |
-| **k9s** | GitHub Releases (derailed/k9s) | Kubernetes TUI |
-| **stern** | GitHub Releases (stern/stern) | Multi-pod log tailing |
-| **kind** | GitHub Releases (kubernetes-sigs/kind) | Local Kubernetes clusters |
-| **minikube** | GitHub Releases (kubernetes/minikube) | Local Kubernetes |
-| **kustomize** | GitHub Releases (kubernetes-sigs/kustomize) | Kubernetes config management |
-| **argocd** | GitHub Releases (argoproj/argo-cd) | Argo CD CLI |
-| **GitHub CLI** | GitHub APT repo (`cli.github.com/packages`) | |
-| **AWS CLI v2** | AWS installer bundle | |
-| **Azure CLI** | Microsoft APT repo | |
+| **Docker CE** | `get.docker.com` | Container runtime |
+| **Docker Compose** | Docker plugin | Multi-container orchestration |
+| **containerd** | Docker bundle | Container runtime daemon |
+| **nerdctl** | GitHub Releases | containerd CLI |
+| **kubectl** | GitHub Releases | Kubernetes CLI |
+| **Helm** | GitHub Releases | Kubernetes package manager |
+| **k9s** | GitHub Releases | Kubernetes TUI dashboard |
+| **stern** | GitHub Releases | Multi-pod log tailing |
+| **kind** | GitHub Releases | Local Kubernetes clusters |
+| **minikube** | GitHub Releases | Local Kubernetes |
+| **kustomize** | GitHub Releases | Kubernetes config management |
+| **Argo CD CLI** | GitHub Releases | GitOps CLI |
 | **skopeo** | Debian repo | Container image inspection |
+
+### Infrastructure as Code & Cloud
+
+| Tool | Source | Purpose |
+|---|---|---|
+| **Terraform** | HashiCorp APT | Infrastructure provisioning |
+| **Ansible** | Debian repo | Configuration management |
+| **AWS CLI v2** | AWS installer | Amazon Web Services |
+| **Azure CLI** | Microsoft APT | Microsoft Azure |
+| **GitHub CLI** | GitHub APT | GitHub operations |
+
+### Utilities
+
+| Tool | Source | Purpose |
+|---|---|---|
+| **yq** | GitHub Releases | YAML/JSON processor |
+| **dive** | GitHub Releases | Docker layer inspector |
 | **jq** | Debian repo | JSON processor |
+| **trivy** | GitHub Releases | Vulnerability scanner |
+| **fuzzel** | Debian repo | App launcher |
+| **foot** | Debian repo | Wayland terminal |
+| **xterm** | Debian repo | X11 terminal (fallback) |
+| **mako** | Debian repo | Notification daemon |
+| **grim** / **slurp** | Debian repo | Screenshot tools |
+| **PipeWire** / **WirePlumber** | Debian repo | Audio |
 
-### System
+### Desktop Environment Packages
 
-| Package | Purpose |
-|---|---|
-| `systemd` + `systemd-sysv` | Init system |
-| `NetworkManager` | Network management |
-| `openssh-server` + `openssh-client` | SSH access |
-| `pipewire` + `pipewire-pulse` + `wireplumber` | Audio |
-| `plymouth` | Boot splash |
-| `cryptsetup` | Disk encryption |
-| `grub-pc` + `grub-efi-*` + `shim-signed` | Bootloader (Legacy + UEFI Secure Boot) |
-| `firmware-linux` + `firmware-sof-signed` | Hardware firmware |
-| `intel-microcode` + `amd64-microcode` | CPU microcode |
-| `bluez` | Bluetooth stack |
-| `upower` + `power-profiles-daemon` | Power management |
-| `polkit-kde-agent-1` | PolicyKit authentication agent |
-
-### Desktop
-
-| Package | Purpose |
-|---|---|
-| `foot` | Wayland terminal emulator |
-| `fuzzel` | Wayland app launcher |
-| `mako-notifier` | Notification daemon |
-| `wl-clipboard` | Clipboard utilities |
-| `grim` + `slurp` | Screenshot + region selection |
-| `xdg-desktop-portal` + `xdg-desktop-portal-gtk` + `xdg-desktop-portal-wlr` | Desktop portals |
-| `xwayland` + `xserver-xorg-core` | X11 app compatibility |
-| `xserver-xorg-video-all` + `xserver-xorg-input-all` | Xorg GPU + input drivers |
-| `mesa-va-drivers` | VA-API video acceleration |
-| `pipewire-alsa` | ALSA audio compatibility |
-| `bluez` | Bluetooth stack |
-| `upower` + `power-profiles-daemon` | Power management |
-| `polkit-kde-agent-1` | PolicyKit authentication agent |
-| `fonts-font-awesome`, `fonts-noto*`, `fonts-noto-color-emoji`, `fonts-liberation` | Fonts |
-| `adwaita-icon-theme` + `papirus-icon-theme` | Icon themes |
-
-### Calamares Installer
-
-The ISO includes Calamares (binary-only, not installed to target) for installing Veilbox to a hard drive. Modules configured:
-
-- `welcome` — System requirements check
-- `locale` — Timezone and locale selection
-- `keyboard` — Keyboard layout
-- `partition` — Disk partitioning
-- `users` — User creation
-- `summary` — Install summary
-- `grubcfg` — GRUB configuration
-- `bootloader` — Bootloader installation
-- `finished` — Completion screen
+```
+foot xterm fuzzel mako-notifier wl-clipboard grim slurp
+pipewire pipewire-pulse wireplumber rtkit
+xwayland xserver-xorg-core xserver-xorg-video-all
+mesa-utils mesa-vulkan-drivers mesa-va-drivers
+fonts-font-awesome fonts-noto* fonts-liberation
+adwaita-icon-theme papirus-icon-theme
+polkit-kde-agent-1 xdg-desktop-portal* spice-vdagent
+```
 
 ---
 
@@ -195,43 +168,41 @@ The ISO includes Calamares (binary-only, not installed to target) for installing
 
 ```
 veilbox/
-├── auto/config              # live-build configuration
-├── build.sh                 # Build wrapper (clean, config, build, qemu)
-├── docker-build.sh          # Host-side wrapper for podman/docker
-├── Dockerfile.build         # Python + live-build container image
+├── auto/config                 # live-build configuration (kernel cmdline, mirror, packages)
+├── build.sh                     # Build wrapper (clean, config, build, qemu)
+├── docker-build.sh              # Containerized build wrapper
+├── Dockerfile.build            # Builder container (Python + live-build)
 ├── config/
-│   ├── package-lists/       # APT package lists
+│   ├── package-lists/           # APT package manifests
 │   │   ├── base.list.chroot
 │   │   ├── desktop.list.chroot
 │   │   ├── devops.list.chroot
-│   │   ├── calamares.list.binary
 │   │   └── live.list.chroot
 │   ├── hooks/
-│   │   ├── live/            # Chroot hooks (runtime)
+│   │   ├── live/                # Runtime chroot hooks
 │   │   │   ├── branding.hook.chroot
 │   │   │   ├── cleanup.hook.chroot
 │   │   │   ├── devops-tools.hook.chroot
 │   │   │   ├── docker-install.hook.chroot
 │   │   │   ├── noctalia-install.hook.chroot
 │   │   │   └── user-setup.hook.chroot
-│   │   └── normal/          # Normal hooks + binary hooks
+│   │   └── normal/
 │   │       └── patch-isolinux-timeout.binary
-│   ├── includes.chroot/     # Filesystem overlay
+│   ├── includes.chroot/         # Filesystem overlay (configs, scripts, themes)
 │   │   ├── etc/
-│   │   │   ├── xdg/niri/    # Niri compositor config (Noctalia spawn, keybindings)
-│   │   │   ├── calamares/   # Calamares configuration
-│   │   │   ├── motd         # Message of the day
-│   │   │   ├── update-motd.d/
-│   │   │   ├── skel/        # Skeleton (.bashrc, .config/niri/)
-│   │   │   ├── default/     # Default config files
-│   │   │   └── systemd/     # Systemd drop-ins (auto-login)
-│   │   ├── home/veilbox/    # User home directory (.bash_profile)
-│   │   ├── usr/             # Scripts, wallpapers, wayland-sessions
-│   │   └── boot/grub/       # GRUB theme
-│   └── includes.binary/     # Binary-stage includes
-├── branding/                # Source assets (logo, wallpaper, GRUB theme)
-├── calamares/               # Calamares branding (branding.desc, show.qml)
-└── output/                  # Build output (veilbox-2.0-amd64.iso)
+│   │   │   ├── xdg/niri/        # Niri compositor config
+│   │   │   ├── calamares/       # Installer modules
+│   │   │   ├── motd             # Message of the day
+│   │   │   ├── update-motd.d/   # Dynamic MOTD scripts
+│   │   │   ├── skel/            # New user skeleton (.bashrc, .config/)
+│   │   │   └── systemd/         # systemd drop-ins (auto-login)
+│   │   ├── home/veilbox/        # Pre-created home directory
+│   │   ├── usr/local/bin/       # Session launcher, debug script
+│   │   └── boot/grub/           # GRUB theme
+│   └── includes.binary/         # Binary-stage overlays
+├── branding/                    # Logo, wallpaper, GRUB theme sources
+├── calamares/                   # Branding module for Calamares
+└── output/                      # Build artifacts (veilbox-2.0-amd64.iso)
 ```
 
 ---
@@ -242,34 +213,43 @@ veilbox/
 
 - Linux host with `podman` or `docker`
 - ~10 GB free disk space
-- Network access to Debian mirrors + GitHub releases
+- Network access to Debian mirrors and GitHub/cloud provider releases
 
 ### Quick Build
 
 ```bash
-# Clone the repository
 git clone https://github.com/veilbox/linux.git
 cd linux
-
-# Build the builder container and run the ISO build
 ./docker-build.sh build
 ```
 
-The ISO will be written to `output/veilbox-2.0-amd64.iso`.
+The ISO is written to `output/veilbox-2.0-amd64.iso`.
 
-### Step-by-Step
+### Step-by-Step (Native)
 
 ```bash
-# 1. Build the builder container
+# Install live-build
+sudo apt install live-build
+
+# Configure, clean, and build
+./auto/config
+sudo lb clean
+sudo lb build
+```
+
+### Step-by-Step (Containerized)
+
+```bash
+# Build the builder container
 podman build -t veilbox-builder -f Dockerfile.build .
 
-# 2. Run the build (this runs `lb build` inside the container)
+# Run the build
 podman run --rm --privileged \
     -v "$(pwd):/repo:Z" \
     veilbox-builder \
     "cd /repo && ./build.sh all"
 
-# 3. The ISO is at output/veilbox-2.0-amd64.iso
+# Verify output
 ls -lh output/
 ```
 
@@ -277,101 +257,115 @@ ls -lh output/
 
 | Command | Description |
 |---|---|
-| `./build.sh clean` | Remove build artifacts |
+| `./build.sh clean` | Clean build artifacts |
 | `./build.sh config` | Re-run `lb config` |
 | `./build.sh build` | Build the ISO |
 | `./build.sh all` | Clean + config + build |
-| `./build.sh qemu` | Boot ISO in QEMU |
+| `./build.sh qemu` | Boot the ISO in QEMU |
 
-### Testing in QEMU
+### QEMU Testing
 
 ```bash
-# Boot with graphical display
+# Graphical boot
 ./build.sh qemu
 
-# Or manual boot with kernel passthrough
-qemu-system-x86_64 -m 4096 -smp 4 -enable-kvm \
+# Serial console boot (debug mode)
+qemu-system-x86_64 -m 2048 -smp 2 -enable-kvm \
     -cdrom output/veilbox-2.0-amd64.iso \
-    -kernel /live/vmlinuz -initrd /live/initrd.img \
-    -append "boot=live components quiet splash console=ttyS0" \
-    -nographic -serial mon:stdio
+    -nographic -display none -serial mon:stdio
+
+# With SSH forwarding
+qemu-system-x86_64 -m 2048 -smp 2 -enable-kvm \
+    -cdrom output/veilbox-2.0-amd64.iso \
+    -netdev user,id=net0,hostfwd=tcp::2224-:22 \
+    -device virtio-net,netdev=net0 \
+    -nographic -display none -serial mon:stdio
+# Then: sshpass -p veilbox ssh -p 2224 veilbox@localhost
 ```
-
-### Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `ARCH` | `amd64` | Target architecture |
-| `MIRROR` | `http://deb.debian.org/debian` | Debian mirror |
-| `OUTPUT_DIR` | `./output` | ISO output directory |
-| `PARALLEL` | `nproc` | Parallel build jobs |
-| `BUILD_CMD` | `build` | Build command for docker-build.sh |
 
 ---
 
-## Live System Details
+## Usage
 
-### Default User
+### Live Session
 
-- **Username:** `veilbox`
-- **Password:** `veilbox`
-- **Sudo:** Passwordless (`NOPASSWD: ALL`)
+The ISO boots to a GRUB menu (auto-selects after 5 seconds). The live session:
 
-### Auto-Login
+1. **Boots** with Plymouth splash and quiet kernel parameters
+2. **Auto-logs in** as user `veilbox` on the display (tty1) and serial console (ttyS0)
+3. **Starts Niri compositor** via `niri-session` wrapper script
+4. **Launches** Noctalia shell, Mako notifications, xwayland-satellite, and foot terminal
 
-The live ISO auto-logs in as `veilbox` on tty1 and starts the Niri desktop session via a systemd drop-in override:
+### Auto-Login Credentials
 
+| Field | Value |
+|---|---|
+| Username | `veilbox` |
+| Password | `veilbox` |
+| sudo | Passwordless (`NOPASSWD: ALL`) |
+
+### Serial Console
+
+The serial console (ttyS0, 115200 baud) provides auto-login and a bash session — useful for headless debugging or VM inspection without a graphical display.
+
+### Desktop Keybindings
+
+| Shortcut | Action |
+|---|---|
+| Mod+D | Open fuzzel launcher |
+| Mod+Return | Open foot terminal |
+| Mod+Q | Close focused window |
+| Mod+Shift+Q | Quit niri |
+| Mod+F | Toggle fullscreen |
+| Mod+H / L | Focus column left / right |
+| Mod+Left / Right | Focus column left / right |
+| Mod+Up / Down | Focus window up / down |
+| Mod+Shift+H / L / Left / Right | Move column |
+| Mod+1–9 | Switch to workspace 1–9 |
+| Mod+Shift+1–9 | Move window to workspace |
+| Mod+WheelUp / Down | Focus previous / next workspace |
+| Mod+Space | Consume or expand window |
+| Mod+Shift+S | Screenshot region |
+| Print | Fullscreen screenshot |
+
+### Session Recovery
+
+If Niri crashes or fails to initialize the display, the `niri-session` watchdog:
+1. Waits 15 seconds for the Wayland socket to appear
+2. On crash: logs the full niri output, restores text console (`chvt 1`)
+3. Falls back to an interactive bash login shell
+
+Diagnostic logs are at `/tmp/veilbox/`:
+- `session-start.log` — Pre-launch diagnostics (GPU, kernel, dmesg)
+- `niri.log` — Niri compositor output
+- Run `veilbox-debug` for a summary
+
+### Install to Disk
+
+Run the Calamares installer from the application menu or terminal:
+
+```bash
+pkexec calamares -d
 ```
-/etc/systemd/system/getty@tty1.service.d/autologin.conf
-```
 
-### Desktop Session
+This provides a graphical guided installation with partitioning, user creation, bootloader setup, and locale configuration.
 
-The `.bash_profile` for `veilbox` detects tty1 and launches `niri-session`, which starts `pipewire` and `wireplumber`, then `exec niri`. Once niri loads, it reads `/etc/xdg/niri/config.kdl` and auto-starts:
+### Virtual Machine Notes
 
-1. `xwayland-satellite` — X11 app compatibility layer
-2. `noctalia` — Shell/panel bar
-3. `mako` — Desktop notification daemon
-
-The niri configuration includes:
-- Noctalia auto-launched as the shell/panel (`spawn-at-startup "noctalia"`)
-- Fuzzel as the app launcher (Mod+D)
-- Foot as the default terminal (Mod+Enter)
-- Mako for desktop notifications
-- Workspace switching (Mod+1-9) and window movement (Mod+Shift+1-9)
-- Consume-or-expand-window (Mod+Space)
-- Screenshot with grim+slurp (Mod+Shift+S) or fullscreen (Print)
-- Fullscreen toggle (Mod+F)
-- Column-based window navigation (Mod+H/L/Up/Down)
-- Touchpad tap-to-click and natural scrolling
-- Wayland environment variables (QT_QPA_PLATFORM, GDK_BACKEND, MOZ_ENABLE_WAYLAND)
-
-### Networking
-
-- DHCP-enabled via NetworkManager
-- SSH server running on port 22 (password auth)
-- Docker socket listening on `/var/run/docker.sock`
-
-### Boot Process
-
-1. ISOLINUX loads and auto-selects the `live-cloud-amd64` entry (5-second timeout)
-2. Kernel boots with `linux-image-amd64` (full desktop kernel with all GPU/driver support)
-3. Initramfs detects the squashfs on the live media
-4. Systemd initializes with live-config for user/locale setup
-5. Getty auto-logs in as `veilbox` on tty1
-6. `.bash_profile` launches `niri-session`
-7. Niri compositor starts with Noctalia shell
+- **VirtualBox**: Enable EFI, set Graphics Controller to VMSVGA, enable 3D Acceleration, allocate 128 MB video memory
+- **QEMU/KVM**: The `spice-vdagent` package is pre-installed for clipboard sharing and display auto-config
+- **VMware**: Use VMware SVGA II graphics driver
 
 ---
 
 ## License
 
-Veilbox is built on Debian GNU/Linux and the Linux kernel. The build scripts and configuration files in this repository are licensed under **GNU General Public License v2.0**.
+Veilbox is built on Debian GNU/Linux and the Linux kernel. The build scripts, configuration files, and documentation in this repository are licensed under **GNU General Public License v2.0**.
 
 See [`COPYING`](COPYING) for details.
 
 ---
 
 <div align="center">
-  <sub>Built with ❄️ using Debian Live Build · Kernel 6.12 · Niri · Noctalia</sub>
+  <sub>Built on Debian Live Build · Kernel 6.12 · Niri · Noctalia · Docker</sub>
 </div>

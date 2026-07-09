@@ -5,6 +5,7 @@ xdg-desktop-portal
 xdg-desktop-portal-gtk
 xdg-utils
 foot
+xterm
 fuzzel
 mako-notifier
 wl-clipboard

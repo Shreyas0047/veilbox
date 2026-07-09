@@ -1,7 +1,7 @@
 #!/bin/sh
 # Niri session launcher for Veilbox
 # Starts niri in background, polls for Wayland socket (proves display init),
-# and falls back to a login shell on crash or timeout.
+# and falls back to text-mode login shell on crash or timeout.
 
 LOGDIR=/tmp/veilbox
 mkdir -p "$LOGDIR"
@@ -15,9 +15,7 @@ export MOZ_ENABLE_WAYLAND=1
 export SDL_VIDEODRIVER=wayland
 export _JAVA_AWT_WM_NONREPARENTING=1
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-
-# PipeWire and WirePlumber are started by systemd --user services.
-# Do NOT start them manually here to avoid lock conflicts.
+export WLR_DRM_NO_MODIFIERS=1
 
 # Log pre-start diagnostics
 {
@@ -30,7 +28,9 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
     ls -la /dev/dri/card* 2>&1
     cat /proc/version 2>&1
     dmesg 2>&1 | grep -iE 'drm|gpu|vga|fb|modeset' | tail -30
+    lspci -k 2>/dev/null | grep -i -A3 'vga\|3d\|display'
     echo "---"
+    echo "=== niri output ==="
 } > "$LOGDIR/session-start.log" 2>&1
 
 # Start niri in background, redirect output to log
@@ -38,7 +38,7 @@ niri "$@" >> "$LOGDIR/niri.log" 2>&1 &
 NIRI_PID=$!
 
 WAYLAND_SOCKET="${XDG_RUNTIME_DIR}/wayland-1"
-TIMEOUT=8
+TIMEOUT=15
 WAIT=0
 
 while [ $WAIT -lt $TIMEOUT ]; do
@@ -50,9 +50,12 @@ while [ $WAIT -lt $TIMEOUT ]; do
         RC=$?
         {
             echo "=== niri crashed (exit code $RC) after ${WAIT}s ==="
-            tail -20 "$LOGDIR/niri.log" 2>/dev/null
+            echo "=== niri log tail ==="
+            cat "$LOGDIR/niri.log" 2>/dev/null
         } >> "$LOGDIR/session-start.log" 2>&1
-        echo "niri crashed (code $RC). Run 'veilbox-debug' for details."
+        echo "niri crashed (code $RC). Check /tmp/veilbox/ for logs."
+        # Restore text console before falling back
+        sudo chvt 1 2>/dev/null || true
         exec /bin/bash --login
     fi
     sleep 1
@@ -60,13 +63,15 @@ while [ $WAIT -lt $TIMEOUT ]; do
 done
 
 if [ -S "$WAYLAND_SOCKET" ]; then
-    # niri is running with display initialized
     echo "niri initialized (Wayland socket ready) after ${WAIT}s" >> "$LOGDIR/session-start.log"
     wait "$NIRI_PID"
     {
         echo "=== niri exited at $(date) ==="
+        echo "=== niri log tail ==="
         tail -20 "$LOGDIR/niri.log" 2>/dev/null
     } >> "$LOGDIR/session-start.log" 2>&1
+    # Restore text console on exit
+    sudo chvt 1 2>/dev/null || true
     exec /bin/bash --login
 else
     # Timed out - niri failed to initialize display
@@ -74,9 +79,12 @@ else
     sleep 1
     {
         echo "=== niri timed out (no Wayland socket after ${TIMEOUT}s) ==="
-        tail -20 "$LOGDIR/niri.log" 2>/dev/null
+        echo "=== niri log full ==="
+        cat "$LOGDIR/niri.log" 2>/dev/null
     } >> "$LOGDIR/session-start.log" 2>&1
     echo "niri failed to initialize display (timeout ${TIMEOUT}s)."
-    echo "Run 'veilbox-debug' for details."
+    echo "Check /tmp/veilbox/ for logs."
+    # Restore text console on timeout
+    sudo chvt 1 2>/dev/null || true
     exec /bin/bash --login
 fi

@@ -40,6 +40,7 @@ spawn-at-startup "xwayland-satellite"
 spawn-at-startup "noctalia"
 spawn-at-startup "mako"
 spawn-at-startup "foot"
+spawn-at-startup "xterm"
 
 // Solid background so it's obvious when niri is running
 output "eDP-1" { background-color "#1a1a2e"; }
@@ -58,6 +59,7 @@ env {
     "SDL_VIDEODRIVER" "wayland"
     "_JAVA_AWT_WM_NONREPARENTING" "1"
     "XDG_CURRENT_DESKTOP" "niri"
+    "WLR_DRM_NO_MODIFIERS" "1"
 }
 
 // Keybindings
