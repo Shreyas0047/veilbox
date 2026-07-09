@@ -39,6 +39,7 @@ window-rule {
 spawn-at-startup "xwayland-satellite"
 spawn-at-startup "noctalia"
 spawn-at-startup "mako"
+spawn-at-startup "foot"
 
 // Solid background so it's obvious when niri is running
 output "eDP-1" { background-color "#1a1a2e"; }
