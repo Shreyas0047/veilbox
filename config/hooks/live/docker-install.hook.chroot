@@ -8,3 +8,6 @@ dpkg --configure -a --force-depends 2>/dev/null || true
 curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
 sh /tmp/get-docker.sh
 rm -f /tmp/get-docker.sh
+
+# Remove Docker apt source to prevent lb build phase from hitting mirror sync issues
+[ -e /etc/apt/sources.list.d/docker.list ] && rm -f /etc/apt/sources.list.d/docker.list
