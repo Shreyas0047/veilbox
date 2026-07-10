@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: debian:trixie-slim
+      options: --privileged
 
     steps:
       - name: Install dependencies
