@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+# Hide Debian-specific launcher from menu (calamares-settings-debian package)
+rm -f /usr/share/applications/calamares-install-debian.desktop
+
 # Clean up package cache and temporary files
 apt-get clean
 rm -rf /var/lib/apt/lists/*
