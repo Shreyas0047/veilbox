@@ -38,3 +38,5 @@ shim-signed
 efibootmgr
 librsvg2-bin
 imagemagick
+cloud-init
+ufw

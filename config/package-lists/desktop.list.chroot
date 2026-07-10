@@ -61,3 +61,6 @@ firmware-iwlwifi
 iucode-tool
 # GPU diagnostic utility
 libgles2
+# Web browser and file manager
+firefox-esr
+thunar

@@ -1,0 +1,52 @@
+name: Build ISO
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'branding/**'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie-slim
+
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq live-build git curl ca-certificates
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure live-build
+        run: ./auto/config
+
+      - name: Build ISO
+        run: |
+          lb build 2>&1 | tee build.log
+
+      - name: Copy ISO
+        run: |
+          mkdir -p output
+          cp live-image-amd64.hybrid.iso output/veilbox-2.0-amd64.iso 2>/dev/null || true
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: veilbox-iso
+          path: output/veilbox-2.0-amd64.iso
+          retention-days: 30
+
+      - name: Upload build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 30

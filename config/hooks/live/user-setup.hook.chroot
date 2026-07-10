@@ -44,5 +44,5 @@ chmod +x /usr/local/bin/niri-session 2>/dev/null || true
 systemctl enable bluetooth.service 2>/dev/null || true
 systemctl enable rtkit-daemon.service 2>/dev/null || true
 
-# Disable root password
-passwd -d root
+# Lock root account (no login, no su)
+passwd -l root
