@@ -10,3 +10,11 @@ podman
 build-essential
 gcc
 make
+fail2ban
+parted
+tmux
+htop
+iotop
+iftop
+docker-compose-plugin
+cockpit

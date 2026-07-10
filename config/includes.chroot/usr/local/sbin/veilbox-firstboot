@@ -20,6 +20,32 @@ passwd -l root 2>/dev/null || true
 # Enable firewall
 ufw --force enable 2>/dev/null || true
 
+# Auto-resize root partition to fill cloud disk
+if command -v growpart >/dev/null 2>&1; then
+    ROOT_DEV=$(findmnt -n -o SOURCE / 2>/dev/null | sed 's/[0-9]*$//')
+    ROOT_PART=$(findmnt -n -o SOURCE / 2>/dev/null | grep -o '[0-9]*$')
+    if [ -n "$ROOT_DEV" ] && [ -n "$ROOT_PART" ]; then
+        growpart "$ROOT_DEV" "$ROOT_PART" 2>/dev/null || true
+        resize2fs "$(findmnt -n -o SOURCE /)" 2>/dev/null || true
+    fi
+fi
+
+# Enable automatic security updates
+if [ -f /etc/apt/apt.conf.d/20auto-upgrades ]; then
+    sed -i 's/APT::Periodic::Update-Package-Lists "0"/APT::Periodic::Update-Package-Lists "1"/' /etc/apt/apt.conf.d/20auto-upgrades
+    sed -i 's/APT::Periodic::Unattended-Upgrade "0"/APT::Periodic::Unattended-Upgrade "1"/' /etc/apt/apt.conf.d/20auto-upgrades
+fi
+systemctl enable unattended-upgrades --now 2>/dev/null || true
+
+# Enable system auditing
+systemctl enable auditd --now 2>/dev/null || true
+
+# Enable entropy generation (important for cloud VMs)
+systemctl enable haveged --now 2>/dev/null || true
+
+# Enable web admin console
+systemctl enable cockpit.socket --now 2>/dev/null || true
+
 # Remove this service so it runs exactly once
 systemctl disable veilbox-firstboot.service 2>/dev/null || true
 rm -f /etc/systemd/system/veilbox-firstboot.service
