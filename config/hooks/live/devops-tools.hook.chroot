@@ -102,9 +102,6 @@ try_install "yq" download_gh_release "mikefarah/yq" "linux_${ARCH}.tar.gz" "yq"
 # dive
 try_install "dive" download_gh_release "wagoodman/dive" "linux_${ARCH}.tar.gz" "dive"
 
-# trivy (asset uses "64bit" not "amd64")
-try_install "trivy" download_gh_release "aquasecurity/trivy" "Linux-64bit.tar.gz" "trivy"
-
 # k9s
 try_install "k9s" download_gh_release "derailed/k9s" "Linux_${ARCH}.tar.gz" "k9s"
 
@@ -114,14 +111,8 @@ try_install "stern" download_gh_release "stern/stern" "linux_${ARCH}.tar.gz" "st
 # kind
 try_install "kind" download_gh_release "kubernetes-sigs/kind" "linux-${ARCH}" "kind"
 
-# minikube
-try_install "minikube" download_gh_release "kubernetes/minikube" "linux-${ARCH}" "minikube"
-
 # kustomize
 try_install "kustomize" download_gh_release "kubernetes-sigs/kustomize" "linux_${ARCH}.tar.gz" "kustomize"
-
-# argocd
-try_install "argocd" download_gh_release "argoproj/argo-cd" "linux-${ARCH}" "argocd"
 
 # Terraform (HashiCorp apt repo)
 try_install "terraform" sh -c "
@@ -144,13 +135,6 @@ try_install "aws" sh -c "
     unzip -q awscliv2.zip 2>/dev/null
     ./aws/install 2>/dev/null
     rm -rf aws awscliv2.zip
-"
-
-# Azure CLI (Microsoft repo)
-try_install "azure-cli" sh -c "
-    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg 2>/dev/null
-    echo 'deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli bookworm main' > /etc/apt/sources.list.d/azure-cli.list
-    apt-get update -qq 2>/dev/null && apt-get install -y -qq azure-cli 2>/dev/null
 "
 
 # Google Cloud CLI (disabled: Python postinst needs /dev/urandom which is unavailable in

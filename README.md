@@ -33,14 +33,14 @@
     <img alt="Shell" src="https://img.shields.io/badge/Shell-Noctalia-FF6B6B?style=flat-square">
     <img alt="Installer" src="https://img.shields.io/badge/Installer-Calamares-4CAF50?style=flat-square">
     <img alt="Container" src="https://img.shields.io/badge/Container-Docker-2496ED?style=flat-square&logo=docker">
-    <img alt="ISO" src="https://img.shields.io/badge/ISO-1.8%20GB-FF5722?style=flat-square">
+    <img alt="ISO" src="https://img.shields.io/badge/ISO-1.7%20GB-FF5722?style=flat-square">
   </p>
 
   <br>
 
 </div>
 
-Veilbox is a live Linux distribution built on Debian Trixie, designed for developers and DevOps practitioners who want a minimal, keyboard-driven Wayland desktop with a full container-native toolchain. It boots directly into the [Niri](https://github.com/niri-wm/niri) scrollable-tiling compositor with the [Noctalia](https://noctalia.dev) shell, Docker, Kubernetes tooling, and cloud CLIs — all on a ~1.8 GB live ISO.
+Veilbox is a live Linux distribution built on Debian Trixie, designed for developers and DevOps practitioners who want a minimal, keyboard-driven Wayland desktop with a full container-native toolchain. It boots directly into the [Niri](https://github.com/niri-wm/niri) scrollable-tiling compositor with the [Noctalia](https://noctalia.dev) shell, Docker, Kubernetes tooling, and cloud CLIs — all on a ~1.7 GB live ISO.
 
 ---
 
@@ -64,7 +64,7 @@ Veilbox is a live Linux distribution built on Debian Trixie, designed for develo
 | **Compositor** | [Niri](https://github.com/niri-wm/niri) — scrollable-tiling Wayland compositor, fluid multi-monitor workflow |
 | **Shell** | [Noctalia](https://noctalia.dev) — keyboard-driven desktop shell, auto-launched by niri |
 | **Container Runtime** | Docker CE + containerd — pre-installed for immediate container workloads |
-| **DevOps Toolchain** | 20+ pre-installed tools: kubectl, Helm, Terraform, Ansible, AWS CLI, Azure CLI, GitHub CLI, k9s, stern, kind, minikube, and more |
+| **DevOps Toolchain** | 15+ pre-installed tools: kubectl, Helm, Terraform, Ansible, AWS CLI, GitHub CLI, k9s, stern, kind, and more |
 | **Installer** | Calamares graphical installer for permanent installations |
 | **Keyboard-driven** | Fuzzel app launcher (Mod+D), foot terminal (Mod+Return), full niri keybindings for window/workspace management |
 | **Full Hardware Support** | Debian desktop kernel (i915, amdgpu, nouveau), PipeWire audio, Bluetooth, power management |
@@ -91,7 +91,7 @@ Veilbox is a live Linux distribution built on Debian Trixie, designed for develo
 | **Installer** | Calamares 3.3 (graphical, binary-only on ISO) |
 | **Init** | systemd |
 | **Bootloader** | ISOLINUX + GRUB (Legacy BIOS + UEFI) |
-| **Image Size** | ~1.8 GB, XZ-compressed squashfs |
+| **Image Size** | ~1.7 GB, XZ-compressed squashfs |
 
 ### Kernel Command Line
 
@@ -120,9 +120,7 @@ username=veilbox locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC
 | **k9s** | GitHub Releases | Kubernetes TUI dashboard |
 | **stern** | GitHub Releases | Multi-pod log tailing |
 | **kind** | GitHub Releases | Local Kubernetes clusters |
-| **minikube** | GitHub Releases | Local Kubernetes |
 | **kustomize** | GitHub Releases | Kubernetes config management |
-| **Argo CD CLI** | GitHub Releases | GitOps CLI |
 | **skopeo** | Debian repo | Container image inspection |
 
 ### Infrastructure as Code & Cloud
@@ -132,7 +130,6 @@ username=veilbox locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC
 | **Terraform** | HashiCorp APT | Infrastructure provisioning |
 | **Ansible** | Debian repo | Configuration management |
 | **AWS CLI v2** | AWS installer | Amazon Web Services |
-| **Azure CLI** | Microsoft APT | Microsoft Azure |
 | **GitHub CLI** | GitHub APT | GitHub operations |
 
 ### Utilities
@@ -142,7 +139,6 @@ username=veilbox locales=en_US.UTF-8 keyboard-layouts=us timezone=UTC
 | **yq** | GitHub Releases | YAML/JSON processor |
 | **dive** | GitHub Releases | Docker layer inspector |
 | **jq** | Debian repo | JSON processor |
-| **trivy** | GitHub Releases | Vulnerability scanner |
 | **fuzzel** | Debian repo | App launcher |
 | **foot** | Debian repo | Wayland terminal |
 | **xterm** | Debian repo | X11 terminal (fallback) |
@@ -157,7 +153,7 @@ foot xterm fuzzel mako-notifier wl-clipboard grim slurp
 pipewire pipewire-pulse wireplumber rtkit
 xwayland xserver-xorg-core xserver-xorg-video-all
 mesa-utils mesa-vulkan-drivers mesa-va-drivers
-fonts-font-awesome fonts-noto* fonts-liberation
+fonts-font-awesome fonts-noto fonts-liberation
 adwaita-icon-theme papirus-icon-theme
 polkit-kde-agent-1 xdg-desktop-portal* spice-vdagent
 ```

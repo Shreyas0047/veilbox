@@ -53,5 +53,3 @@ haveged
 needrestart
 lvm2
 etckeeper
-prometheus
-prometheus-node-exporter
