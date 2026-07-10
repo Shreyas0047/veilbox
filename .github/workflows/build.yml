@@ -59,7 +59,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          apt-get install -y -qq gh 2>/dev/null || true
+          # Install gh from official repo for large file (>2GB) chunked upload support
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
+          apt-get update -qq && apt-get install -y -qq gh
           RELEASE_TAG="v2.0.0"
           if gh release view "$RELEASE_TAG" --repo Shreyas0047/veilbox &>/dev/null; then
             echo "Uploading to release $RELEASE_TAG..."
