@@ -40,3 +40,8 @@ librsvg2-bin
 imagemagick
 cloud-init
 ufw
+apparmor
+apparmor-profiles
+apparmor-utils
+prometheus
+prometheus-node-exporter

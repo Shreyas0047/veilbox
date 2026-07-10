@@ -1,0 +1,13 @@
+[Unit]
+Description=Veilbox first-boot hardening
+After=network-online.target ssh.service
+ConditionPathExists=/usr/local/sbin/veilbox-firstboot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/veilbox-firstboot
+RemainAfterExit=no
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target
