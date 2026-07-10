@@ -50,3 +50,18 @@ jobs:
           name: build-log
           path: build.log
           retention-days: 30
+
+      - name: Upload ISO to Release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          apt-get install -y -qq gh 2>/dev/null || true
+          RELEASE_TAG="v2.0.0"
+          if gh release view "$RELEASE_TAG" --repo Shreyas0047/veilbox &>/dev/null; then
+            echo "Uploading to release $RELEASE_TAG..."
+            gh release upload "$RELEASE_TAG" output/veilbox-2.0-amd64.iso --repo Shreyas0047/veilbox --clobber
+          else
+            echo "Release $RELEASE_TAG not found, creating..."
+            gh release create "$RELEASE_TAG" output/veilbox-2.0-amd64.iso --repo Shreyas0047/veilbox --title "$RELEASE_TAG" --generate-notes
+          fi
