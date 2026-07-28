@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Veilbox Linux version 2</title>
+  <desc id="desc">An animated scrollable workspace of translucent windows orbiting a Veilbox terminal.</desc>
+
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#070B18"/>
+      <stop offset=".52" stop-color="#10142A"/>
+      <stop offset="1" stop-color="#171331"/>
+    </linearGradient>
+    <linearGradient id="aurora" x1="0" y1=".5" x2="1" y2=".5">
+      <stop offset="0" stop-color="#4DE3FF" stop-opacity="0"/>
+      <stop offset=".42" stop-color="#4DE3FF" stop-opacity=".55"/>
+      <stop offset=".72" stop-color="#9B7BFF" stop-opacity=".72"/>
+      <stop offset="1" stop-color="#FF7AB6" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#62E8FF"/>
+      <stop offset=".55" stop-color="#A688FF"/>
+      <stop offset="1" stop-color="#FF7AB6"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop stop-color="#7D6BFF" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#7D6BFF" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#AEBBFF" stroke-opacity=".055"/>
+    </pattern>
+    <filter id="blur24">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#02040C" flood-opacity=".62"/>
+    </filter>
+    <clipPath id="frame">
+      <rect x="0" y="0" width="1200" height="420" rx="28"/>
+    </clipPath>
+  </defs>
+
+  <style>
+    .display { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    .workspace { animation: drift 12s ease-in-out infinite alternate; }
+    .tile-a { animation: tileA 8s ease-in-out infinite; transform-origin: 870px 205px; }
+    .tile-b { animation: tileB 8s ease-in-out -2.2s infinite; transform-origin: 1000px 145px; }
+    .tile-c { animation: tileC 8s ease-in-out -4.4s infinite; transform-origin: 1050px 285px; }
+    .orbit { animation: orbit 18s linear infinite; transform-origin: 914px 210px; }
+    .cursor { animation: blink 1.15s steps(1) infinite; }
+    .signal { animation: sweep 5s ease-in-out infinite; }
+    .dot { animation: breathe 3.4s ease-in-out infinite; }
+    @keyframes drift {
+      from { transform: translateX(-8px); }
+      to { transform: translateX(12px); }
+    }
+    @keyframes tileA {
+      0%, 100% { transform: translate(0, 0); opacity: .94; }
+      50% { transform: translate(-12px, -7px); opacity: 1; }
+    }
+    @keyframes tileB {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(9px, 5px); }
+    }
+    @keyframes tileC {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(-7px, 9px); }
+    }
+    @keyframes orbit { to { transform: rotate(360deg); } }
+    @keyframes blink { 0%, 48% { opacity: 1; } 49%, 100% { opacity: 0; } }
+    @keyframes sweep {
+      0%, 100% { transform: translateX(-110px); opacity: 0; }
+      20%, 78% { opacity: .8; }
+      55% { transform: translateX(560px); opacity: .35; }
+    }
+    @keyframes breathe {
+      0%, 100% { opacity: .45; }
+      50% { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .workspace, .tile-a, .tile-b, .tile-c, .orbit, .cursor, .signal, .dot { animation: none; }
+    }
+  </style>
+
+  <g clip-path="url(#frame)">
+    <rect width="1200" height="420" fill="url(#sky)"/>
+    <rect width="1200" height="420" fill="url(#grid)"/>
+    <ellipse cx="900" cy="205" rx="420" ry="300" fill="url(#glow)" filter="url(#blur24)"/>
+    <path class="signal" d="M380 355C525 276 641 292 760 204S1007 102 1190 116" fill="none" stroke="url(#aurora)" stroke-width="2"/>
+
+    <g class="display">
+      <g transform="translate(76 70)">
+        <rect width="126" height="28" rx="14" fill="#A688FF" fill-opacity=".12" stroke="#A688FF" stroke-opacity=".35"/>
+        <circle class="dot" cx="17" cy="14" r="4" fill="#62E8FF"/>
+        <text x="30" y="18.5" fill="#D5DBFF" font-size="11" font-weight="650" letter-spacing="1.4">VEILBOX 2.0</text>
+      </g>
+
+      <text x="76" y="166" fill="#F6F7FF" font-size="61" font-weight="760" letter-spacing="-2.8">Build. Boot.</text>
+      <text x="76" y="226" fill="url(#edge)" font-size="61" font-weight="760" letter-spacing="-2.8">Ship anywhere.</text>
+      <text x="79" y="269" fill="#AAB2D2" font-size="17" font-weight="440" letter-spacing=".1">A container-native Debian workspace, composed for flow.</text>
+
+      <g class="mono" transform="translate(78 307)">
+        <rect width="395" height="52" rx="12" fill="#080C1A" fill-opacity=".78" stroke="#8390C7" stroke-opacity=".22"/>
+        <circle cx="19" cy="17" r="3" fill="#FF7AB6"/>
+        <circle cx="30" cy="17" r="3" fill="#FFD479"/>
+        <circle cx="41" cy="17" r="3" fill="#62E8FF"/>
+        <text x="18" y="38" fill="#8190B8" font-size="12">$</text>
+        <text x="34" y="38" fill="#DCE2FF" font-size="12">docker-build.sh build</text>
+        <rect class="cursor" x="199" y="28" width="7" height="13" rx="1" fill="#62E8FF"/>
+        <text x="282" y="38" fill="#7783A9" font-size="10" letter-spacing="1">DEBIAN · NIRI</text>
+      </g>
+    </g>
+
+    <g class="workspace" filter="url(#shadow)">
+      <ellipse cx="914" cy="210" rx="255" ry="150" fill="none" stroke="#91A0D8" stroke-opacity=".13"/>
+      <g class="orbit">
+        <circle cx="914" cy="60" r="4" fill="#62E8FF"/>
+        <circle cx="914" cy="60" r="10" fill="none" stroke="#62E8FF" stroke-opacity=".3"/>
+      </g>
+
+      <g class="tile-b" transform="rotate(3 1010 123)">
+        <rect x="911" y="57" width="218" height="142" rx="17" fill="#131A35" stroke="#8798DF" stroke-opacity=".34"/>
+        <rect x="928" y="77" width="62" height="7" rx="3.5" fill="#FF7AB6" fill-opacity=".7"/>
+        <rect x="928" y="100" width="151" height="5" rx="2.5" fill="#8090C8" fill-opacity=".34"/>
+        <rect x="928" y="114" width="122" height="5" rx="2.5" fill="#8090C8" fill-opacity=".22"/>
+        <rect x="928" y="141" width="45" height="37" rx="8" fill="#9B7BFF" fill-opacity=".13" stroke="#A688FF" stroke-opacity=".26"/>
+        <rect x="981" y="141" width="61" height="37" rx="8" fill="#4DE3FF" fill-opacity=".09" stroke="#62E8FF" stroke-opacity=".22"/>
+        <rect x="1050" y="141" width="61" height="37" rx="8" fill="#FF7AB6" fill-opacity=".08" stroke="#FF7AB6" stroke-opacity=".2"/>
+      </g>
+
+      <g class="tile-c" transform="rotate(-3 1025 284)">
+        <rect x="918" y="218" width="238" height="142" rx="17" fill="#11172E" stroke="#8798DF" stroke-opacity=".3"/>
+        <circle cx="942" cy="242" r="5" fill="#62E8FF"/>
+        <rect x="956" y="238" width="68" height="7" rx="3.5" fill="#DDE3FF" fill-opacity=".68"/>
+        <path d="M941 316l30-29 22 16 35-42 34 24 29-34 37 58" fill="none" stroke="url(#edge)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M941 325h187" stroke="#7785B7" stroke-opacity=".24"/>
+      </g>
+
+      <g class="tile-a">
+        <rect x="704" y="102" width="286" height="218" rx="20" fill="#0D1328" stroke="url(#edge)" stroke-opacity=".72"/>
+        <path d="M704 137h286" stroke="#91A0D8" stroke-opacity=".2"/>
+        <circle cx="727" cy="120" r="4" fill="#FF7AB6"/>
+        <circle cx="741" cy="120" r="4" fill="#FFD479"/>
+        <circle cx="755" cy="120" r="4" fill="#62E8FF"/>
+        <text class="mono" x="727" y="163" fill="#7D8AAF" font-size="11">veilbox@live</text>
+        <text class="mono" x="727" y="187" fill="#62E8FF" font-size="12">❯</text>
+        <text class="mono" x="746" y="187" fill="#E3E7FF" font-size="12">systemctl status docker</text>
+        <circle cx="730" cy="215" r="4" fill="#74F0B3"/>
+        <text class="mono" x="744" y="219" fill="#AEB8DA" font-size="11">active (running)</text>
+        <g transform="translate(727 247)">
+          <rect width="76" height="39" rx="9" fill="#62E8FF" fill-opacity=".1" stroke="#62E8FF" stroke-opacity=".25"/>
+          <path d="M14 12h9v8h-9zm12 0h9v8h-9zm-12 11h9v5h-9zm12 0h9v5h-9z" fill="#62E8FF" fill-opacity=".75"/>
+          <text class="mono" x="43" y="24" fill="#B8C4E8" font-size="9">03</text>
+        </g>
+        <g transform="translate(813 247)">
+          <rect width="148" height="39" rx="9" fill="#A688FF" fill-opacity=".09" stroke="#A688FF" stroke-opacity=".23"/>
+          <text class="mono" x="13" y="16" fill="#7F8CB3" font-size="8">WORKSPACE</text>
+          <text class="mono" x="13" y="29" fill="#DCE2FF" font-size="10">niri / noctalia</text>
+        </g>
+      </g>
+    </g>
+
+    <text class="mono" x="1118" y="393" text-anchor="end" fill="#647099" font-size="9" letter-spacing="1.6">TRIXIE / AMD64</text>
+  </g>
+  <rect x=".75" y=".75" width="1198.5" height="418.5" rx="27.25" fill="none" stroke="#8996CC" stroke-opacity=".2" stroke-width="1.5"/>
+</svg>
