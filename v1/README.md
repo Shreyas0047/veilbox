@@ -1,11 +1,6 @@
-```
-__      __  _ _ _               
-\ \    / / (_) | |              
- \ \  / /__ _| | |__   _____  __
-  \ \/ / _ \ | | '_ \ / _ \ \/ /
-   \  /  __/ | | |_) | (_) >  < 
-    \/ \___|_|_|_.__/ \___/_/\_\
-```
+<div align="center">
+  <img alt="Veilbox Linux v1 — The whole system. Nothing hidden." src="./readme-hero.svg" width="100%">
+</div>
 
 Minimal bootable OS — custom kernel, BusyBox, containerd, Dropbear SSH. Boots from a single disk in under 15 seconds.
 

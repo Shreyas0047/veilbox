@@ -1,9 +1,6 @@
 <div align="center">
 
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="branding/logo.svg">
-    <img alt="Veilbox" src="branding/logo.svg" width="120" height="120">
-  </picture>
+  <img alt="Veilbox Linux — Build. Boot. Ship anywhere." src="./readme-hero.svg" width="100%">
 
   <h1>Veilbox Linux</h1>
 
