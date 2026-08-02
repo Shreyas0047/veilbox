@@ -1,6 +1,13 @@
 # Veilbox v3
 
-> **Status: Under active development — no ISO available yet.**
+<div align="center">
+
+> ⚠️ **STILL UNDER DEVELOPMENT** ⚠️
+>
+> This is an in-progress rebuild. **No v3 ISO is available yet.**
+> Nothing here is installable or bootable at this stage.
+
+</div>
 
 Veilbox v3 is a **ground-up, Fedora-based rebuild** of Veilbox Linux.
 
