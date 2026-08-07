@@ -7,13 +7,19 @@ import (
 )
 
 const devopsYAML = `name: devops
-description: DevOps engineer — builds and operates delivery pipelines.
-capabilities:
-  containers:
-    - podman
-  infrastructure:
-    - ansible
-    - terraform
+display_name: DevOps Engineer
+description: Builds and operates delivery pipelines.
+role: devops
+recommended_experiences:
+  - base-ops
+  - networking-tools
+  - terminal-ops
+optional_experiences:
+  - observability-cli
+tags: [ci, delivery, operations]
+workspace_preferences:
+  shell: bash
+  editor: vim
 `
 
 func writeProfile(t *testing.T, dir, name, content string) {
@@ -31,14 +37,42 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if m.Name != "devops" || m.Description == "" {
+	if m.Name != "devops" || m.DisplayName != "DevOps Engineer" || m.Description == "" {
 		t.Fatalf("bad manifest: %+v", m)
 	}
-	if len(m.Capabilities["containers"]) != 1 || m.Capabilities["containers"][0] != "podman" {
-		t.Fatalf("bad capabilities: %+v", m.Capabilities)
+	if len(m.Recommended) != 3 || m.Recommended[0] != "base-ops" {
+		t.Fatalf("bad recommended: %+v", m.Recommended)
 	}
-	if got := m.CapabilityNames(); len(got) != 3 || got[0] != "ansible" {
-		t.Fatalf("capability names: %v", got)
+	if len(m.Optional) != 1 || m.Optional[0] != "observability-cli" {
+		t.Fatalf("bad optional: %+v", m.Optional)
+	}
+	if len(m.Tags) != 3 || m.Workspace["shell"] != "bash" {
+		t.Fatalf("bad metadata: %+v %+v", m.Tags, m.Workspace)
+	}
+}
+
+func TestLoadDefaults(t *testing.T) {
+	dir := t.TempDir()
+	writeProfile(t, dir, "sre", "name: sre\ndescription: keeps systems reliable.\n")
+	m, err := NewRegistryDir(dir).Load("sre")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if m.DisplayName != "sre" || m.Role != "sre" || m.Workspace == nil {
+		t.Fatalf("defaults not applied: %+v", m)
+	}
+}
+
+func TestAllReferences(t *testing.T) {
+	dir := t.TempDir()
+	writeProfile(t, dir, "devops", devopsYAML)
+	m, err := NewRegistryDir(dir).Load("devops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := m.AllReferences()
+	if len(got) != 4 || got[0] != "base-ops" || got[3] != "terminal-ops" {
+		t.Fatalf("references: %v", got)
 	}
 }
 
@@ -51,7 +85,7 @@ func TestLoadUnknown(t *testing.T) {
 
 func TestLoadNameMismatch(t *testing.T) {
 	dir := t.TempDir()
-	writeProfile(t, dir, "devops", "name: other\n")
+	writeProfile(t, dir, "devops", "name: other\ndescription: x\n")
 	if _, err := NewRegistryDir(dir).Load("devops"); err == nil {
 		t.Fatal("expected error for name mismatch")
 	}
@@ -65,10 +99,32 @@ func TestLoadInvalidYAML(t *testing.T) {
 	}
 }
 
+func TestLoadValidation(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{"missing description", "name: devops\n"},
+		{"bad name chars", "name: Dev Ops\ndescription: x\n"},
+		{"duplicate recommended", "name: devops\ndescription: x\nrecommended_experiences: [a, a]\n"},
+		{"bad reference", "name: devops\ndescription: x\nrecommended_experiences: [a b]\n"},
+		{"invalid filename", "name: ../evil\ndescription: x\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeProfile(t, dir, "devops", tc.content)
+			if _, err := NewRegistryDir(dir).Load("devops"); err == nil {
+				t.Fatalf("expected validation error for %q", tc.content)
+			}
+		})
+	}
+}
+
 func TestList(t *testing.T) {
 	dir := t.TempDir()
 	writeProfile(t, dir, "devops", devopsYAML)
-	writeProfile(t, dir, "sre", "name: sre\n")
+	writeProfile(t, dir, "sre", "name: sre\ndescription: x\n")
 	names, err := NewRegistryDir(dir).List()
 	if err != nil {
 		t.Fatalf("list: %v", err)

@@ -65,8 +65,8 @@ func NewWithRunner(r Runner) *System {
 // Binaries used by Veilbox. Indirection keeps test fakes honest and
 // lets doctor report availability.
 const (
-	RPMBinary = "rpm"
-	DNFBinary = "dnf"
+	RPMBinary  = "rpm"
+	DNFBinary  = "dnf"
 	SudoBinary = "sudo"
 )
 

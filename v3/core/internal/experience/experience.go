@@ -34,9 +34,9 @@ const PackagePrefix = "veilbox-experience-"
 type Status string
 
 const (
-	StatusPlanned    Status = "planned"
-	StatusAvailable  Status = "available"
-	StatusInstalled  Status = "installed"
+	StatusPlanned   Status = "planned"
+	StatusAvailable Status = "available"
+	StatusInstalled Status = "installed"
 )
 
 // Manifest is an experience catalog entry (experiences/<name>.yaml).

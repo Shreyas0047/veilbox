@@ -24,8 +24,8 @@ type fakeRunner struct {
 
 func newFakeRunner() *fakeRunner {
 	return &fakeRunner{
-		errByCmd:   map[string]error{},
-		responses:  map[string]string{},
+		errByCmd:  map[string]error{},
+		responses: map[string]string{},
 	}
 }
 
