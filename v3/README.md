@@ -29,10 +29,16 @@ through tags, releases, and Git history.
 ```
 v3/
 ├── README.md      ← you are here
-├── docs/          ← design docs, architecture decisions
-├── kickstart/     ← Fedora kickstart files
-├── configs/       ← system & application configs
-├── packages/      ← custom package specs / overlays
+├── docs/
+│   └── adr/       ← architecture decision records
+├── core/          ← Veilbox Core (Go)
+│   ├── cmd/veil/  ← the veil CLI
+│   └── internal/  ← profile, experience, settings, workspace, dnfops engines
+├── profiles/      ← profile definitions (intent — configuration, never RPMs)
+├── experiences/   ← experience definitions (capability — shipped as RPMs)
+├── packages/      ← RPM specs, sources, built artifacts
+├── configs/       ← user-level config overlays delivered by experiences
+├── kickstart/     ← Fedora kickstart files (stretch goal)
 ├── scripts/       ← build & tooling scripts
 ├── branding/      ← logos, themes, assets
 └── tests/         ← test suites and smoke checks
@@ -42,4 +48,8 @@ v3/
 
 - All v3 work happens on the `v3` branch.
 - The `main` branch continues to host v2.
-- See `docs/` for design notes as they are written.
+- See `docs/adr/` for the architecture decision records (start with
+  ADR-0001 and ADR-0002).
+- The disposable development VM has passwordless sudo enabled **for
+  automation only** (see ADR-0002). It is deliberately not part of any
+  Veilbox artifact, kickstart, or default configuration.

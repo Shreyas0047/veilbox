@@ -1,0 +1,17 @@
+# Go build artifacts
+core/bin/
+core/veil
+*.exe
+*.test
+
+# RPM build artifacts (rpmbuild / mock output)
+packages/RPMS/
+packages/SRPMS/
+packages/build/
+packages/venv/
+
+# Local dnf repository output
+repo/
+
+# Local testing state
+tests/tmp/
