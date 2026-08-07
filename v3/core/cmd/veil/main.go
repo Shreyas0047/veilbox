@@ -17,6 +17,7 @@
 //	veil experience info <name>
 //	veil experience install <name>
 //	veil experience remove <name>
+//	veil workspace [plan|apply|status|reset]
 //	veil status
 //	veil doctor
 package main
@@ -55,6 +56,12 @@ Commands:
   experience info <name>  Show details about an experience
   experience install <name>  Install an experience through DNF
   experience remove <name>   Remove an experience through DNF
+  workspace               Show the workspace overview
+  workspace plan          Show what apply would do (no changes)
+  workspace apply [--yes] [--force]
+                          Apply the active profile's workspace
+  workspace status        Report applied state, drift, conflicts
+  workspace reset [--yes] Remove only Veilbox-managed workspace config
   status                  Show current Veilbox and system state
   doctor                  Diagnose Veilbox and system health
   version                 Print version information
@@ -103,6 +110,8 @@ func run(args []string, stdout, stderr io.Writer, d deps) int {
 		return cmdProfile(args[1:], stdout, stderr, d)
 	case "experience":
 		return cmdExperience(args[1:], stdout, stderr, d)
+	case "workspace":
+		return cmdWorkspace(args[1:], stdout, stderr)
 	case "status":
 		return cmdStatus(stdout, stderr, d)
 	case "doctor":
@@ -215,10 +224,11 @@ func profileShow(name string, stdout, stderr io.Writer, d deps) int {
 	if len(m.Tags) > 0 {
 		fmt.Fprintf(stdout, "Tags: %s\n", strings.Join(m.Tags, ", "))
 	}
-	if len(m.Workspace) > 0 {
+	prefLines := renderPrefs(m.Workspace)
+	if len(prefLines) > 0 {
 		fmt.Fprintln(stdout, "Workspace preferences:")
-		for _, k := range sortedKeys(m.Workspace) {
-			fmt.Fprintf(stdout, "  %s: %s\n", k, m.Workspace[k])
+		for _, l := range prefLines {
+			fmt.Fprintf(stdout, "  %s\n", l)
 		}
 	}
 
@@ -238,20 +248,6 @@ func statusText(statuses map[string]string, name string) string {
 		return s
 	}
 	return "unknown"
-}
-
-func sortedKeys(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	// profiles are small; a simple sort keeps output deterministic
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j] < out[j-1]; j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
-	return out
 }
 
 func profileApply(name string, stdout, stderr io.Writer, d deps) int {
@@ -709,7 +705,33 @@ func cmdDoctor(stdout, stderr io.Writer, d deps) int {
 		}
 	}
 
-	_ = workspace.Provision()
+	// Workspace health (warn-level: a drifted workspace is recoverable
+	// and is the user's decision to reconcile).
+	wsSt, werr := workspace.LoadState()
+	check("Workspace state parses", false, werr == nil, fmt.Sprintf("generation %d", wsSt.Generation))
+	if werr == nil && st.ActiveProfile != "" {
+		if m, err := profile.NewRegistry().Load(st.ActiveProfile); err == nil {
+			verr := m.Workspace.Validate()
+			if verr != nil {
+				check("Workspace preferences valid", false, false, verr.Error())
+			} else {
+				rep, serr := newWorkspaceEngine().Status(m.Workspace, st.ActiveProfile)
+				if serr != nil {
+					check("Workspace status readable", false, false, serr.Error())
+				} else {
+					conflicts := 0
+					for _, it := range rep.Items {
+						if it.Verdict == workspace.VerdictConflict || it.Verdict == workspace.VerdictDrifted {
+							conflicts++
+						}
+					}
+					check("Workspace preferences valid", false, true, "")
+					check("Workspace has no conflicts", false, conflicts == 0,
+						fmt.Sprintf("%d drifted/conflicted item(s)", conflicts))
+				}
+			}
+		}
+	}
 
 	if fail > 0 {
 		fmt.Fprintf(stdout, "%d critical check(s) failed.\n", fail)

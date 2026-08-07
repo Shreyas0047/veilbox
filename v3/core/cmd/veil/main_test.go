@@ -128,6 +128,9 @@ optional_experiences:
 tags: [ci, delivery]
 workspace_preferences:
   shell: bash
+  prompt: veilbox
+  aliases:
+    k: kubectl
 `
 
 func TestVersion(t *testing.T) {

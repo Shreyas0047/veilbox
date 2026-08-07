@@ -25,6 +25,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Shreyas0047/veilbox/v3/core/internal/settings"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/workspace"
 )
 
 // namePattern matches manifest names and experience references:
@@ -33,18 +34,20 @@ var namePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // Manifest is a profile definition file (profiles/<name>.yaml).
 //
-// DisplayName, Role, and WorkspacePrefs are presentation metadata;
-// Recommended and Optional are the intent: experience catalog entries
-// the engineer likely needs (recommended) or may want (optional).
+// DisplayName and Role are presentation metadata; Recommended and
+// Optional are the intent: experience catalog entries the engineer
+// likely needs (recommended) or may want (optional). Workspace holds
+// the preferences the Workspace Engine translates into user-level
+// workspace configuration.
 type Manifest struct {
-	Name        string            `yaml:"name"`
-	DisplayName string            `yaml:"display_name,omitempty"`
-	Description string            `yaml:"description"`
-	Role        string            `yaml:"role,omitempty"`
-	Recommended []string          `yaml:"recommended_experiences,omitempty"`
-	Optional    []string          `yaml:"optional_experiences,omitempty"`
-	Tags        []string          `yaml:"tags,omitempty"`
-	Workspace   map[string]string `yaml:"workspace_preferences,omitempty"`
+	Name        string                `yaml:"name"`
+	DisplayName string                `yaml:"display_name,omitempty"`
+	Description string                `yaml:"description"`
+	Role        string                `yaml:"role,omitempty"`
+	Recommended []string              `yaml:"recommended_experiences,omitempty"`
+	Optional    []string              `yaml:"optional_experiences,omitempty"`
+	Tags        []string              `yaml:"tags,omitempty"`
+	Workspace   workspace.Preferences `yaml:"workspace_preferences,omitempty"`
 }
 
 // AllReferences returns the sorted union of recommended and optional
@@ -97,9 +100,6 @@ func (m *Manifest) fillDefaults() {
 	}
 	if m.Role == "" {
 		m.Role = m.Name
-	}
-	if m.Workspace == nil {
-		m.Workspace = map[string]string{}
 	}
 }
 

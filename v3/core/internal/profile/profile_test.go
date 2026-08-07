@@ -46,7 +46,7 @@ func TestLoad(t *testing.T) {
 	if len(m.Optional) != 1 || m.Optional[0] != "observability-cli" {
 		t.Fatalf("bad optional: %+v", m.Optional)
 	}
-	if len(m.Tags) != 3 || m.Workspace["shell"] != "bash" {
+	if len(m.Tags) != 3 || m.Workspace.Shell != "bash" || m.Workspace.Editor != "vim" {
 		t.Fatalf("bad metadata: %+v %+v", m.Tags, m.Workspace)
 	}
 }
@@ -58,7 +58,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if m.DisplayName != "sre" || m.Role != "sre" || m.Workspace == nil {
+	if m.DisplayName != "sre" || m.Role != "sre" {
 		t.Fatalf("defaults not applied: %+v", m)
 	}
 }
