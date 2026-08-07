@@ -138,13 +138,36 @@ from scratch so it is genuinely user-installed.
   steps 1–17, removal semantics, extras preservation, sre switch,
   doctor.
 
+## Post-reboot verification (2026-08-07)
+
+Performed after a full VM reboot with the committed tree at `3879e44`:
+
+1. `veil status` → Core 0.1.0-2, Profile **sre**, Profile sync
+   **synced**, the 3 experiences installed — profile and experience
+   state persisted (user-owned JSON plus RPM database; nothing boots
+   Veilbox services).
+2. `veil doctor` → all 12 checks OK, exit 0.
+3. RPM database identical to the pre-reboot snapshot: the 4 veilbox
+   packages, all 15 experience dependency packages, 845 total RPMs,
+   `veilbox-dev.repo` present and reachable.
+4. `veil profile diff sre` → still fully satisfied.
+5. No Veilbox systemd units exist; packaged data under
+   `/usr/share/veilbox/{profiles,experiences}/` intact.
+6. `GOFLAGS=-mod=vendor go test ./...` and `go vet ./...` → pass.
+
+Gotcha found during snapshot capture: Fedora 44 ships **no** package
+named `iotop` — the meta-package `Requires: iotop` is a *virtual
+provide* resolved by DNF to `iotop-c`. `rpm -q iotop` reports "not
+installed" while `/usr/bin/iotop` belongs to `iotop-c`. Expected RPM
+behavior; doctor is unaffected because its consistency check only
+tests the meta-packages.
+
 ## Current limitations
 
 - `workspace_preferences` is carried but not consumed yet (workspace
   engine, Day 4+).
 - Sync with a "y" prompt reads stdin; no `--assume-no` (Abort on
   non-y already).
-- Reboot persistence check pending (next session, like Day 2).
 
 ## References
 
