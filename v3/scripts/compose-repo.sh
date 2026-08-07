@@ -20,6 +20,9 @@ if [[ ! -d packages/build/RPMS ]]; then
 fi
 
 sudo mkdir -p "${REPO_DIR}"
+# Drop stale RPMs first: republishing is a no-op, but a leftover same-
+# NEVRA RPM from an earlier compose would corrupt repo metadata.
+sudo rm -f "${REPO_DIR}"/*.rpm
 sudo cp packages/build/RPMS/*/*.rpm "${REPO_DIR}/"
 sudo createrepo_c --update "${REPO_DIR}"
 

@@ -14,8 +14,9 @@ mkdir -p "${TOPDIR}"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 cp "${SPECS}"/*.spec "${TOPDIR}/SPECS/"
 cp packages/SOURCES/*.tar.gz "${TOPDIR}/SOURCES/" 2>/dev/null || true
 
-rpmbuild --define "_topdir ${TOPDIR}" -ba "${TOPDIR}/SPECS/veilbox-core.spec"
-rpmbuild --define "_topdir ${TOPDIR}" -ba "${TOPDIR}/SPECS/veilbox-experience-networking-tools.spec"
+for spec in "${TOPDIR}"/SPECS/*.spec; do
+    rpmbuild --define "_topdir ${TOPDIR}" -ba "${spec}"
+done
 
 echo "--- built RPMs ---"
 find "${TOPDIR}/RPMS" -name '*.rpm' -printf '%f\n' | sort
