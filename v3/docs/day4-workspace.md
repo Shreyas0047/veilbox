@@ -117,8 +117,17 @@ generated files → `.bashrc` preserved → apply again (idempotent) →
 status clean → manual drift → status drifted → no silent overwrite →
 `--force` reconcile → switch profile → plan reflects new profile →
 apply → stale tmux config removed → reset → only managed config gone,
-original intact → reapply → **reboot (manual, next session)** →
-state persists, status clean → doctor.
+original intact → reapply → **reboot** → state persists, status clean
+→ doctor.
+
+### Reboot persistence (verified)
+
+Post-reboot, generation 20 with applied profile `sre` survived; the
+managed include block in `~/.bashrc` (lines 29–31), sha256 hashes of
+`.bashrc`, `shell.sh` and `state.json` matched the pre-reboot snapshot
+byte-for-byte; `veil workspace status` = clean, `veil workspace plan`
+= UNCHANGED, `veil doctor` = 15/15 OK; `veilbox-core-0.1.0-3`
+reported at `/usr/bin/veil`. Backups ledger untouched.
 
 ## Limitations
 
