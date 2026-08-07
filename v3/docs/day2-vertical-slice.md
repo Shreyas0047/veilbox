@@ -94,11 +94,34 @@ name through DNF — the code path is identical to a future HTTP repo.
 
 Verify the install is real: `which dig && dig +short localhost`.
 
+## Post-reboot and removal verification (2026-08-07)
+
+Performed after a full VM reboot with the committed tree at `6306e75`:
+
+1. `veil status` → Core 0.1.0, Profile **devops**, Experience
+   **veilbox-experience-networking-tools** — profile and experience
+   state both persisted across reboot (state is user-owned JSON plus
+   RPM database; nothing boots Veilbox services).
+2. `veil doctor` → all 6 checks OK, exit 0.
+3. `veil experience remove networking-tools` → DNF removed the
+   meta-package plus 8 now-unused dependencies (bind-libs, bind-utils,
+   fstrm, libmaxminddb, libpcap, nmap-ncat, tcpdump, traceroute).
+   `iproute` was correctly **kept** (pre-installed Fedora package, not
+   a Veilbox dependency).
+4. Snapshot diff (`rpm -qa` before/after) contained **exactly** those 9
+   packages — no unrelated package removed or added; `/etc/yum.repos.d/`
+   unchanged; no stray systemd units created by Veilbox.
+5. `veil experience list` → `networking-tools` back to **available**;
+   `veil status` → Profile devops intact, `(none installed)` experiences,
+   834 RPMs (843 − 9); `veil doctor` → all OK.
+6. `GOFLAGS=-mod=vendor go test ./...` and `go vet ./...` → pass.
+
+Conclusion: install/removal is symmetric through DNF, state is
+RPM-consistent, and nothing outside Veilbox-managed packages was
+touched.
+
 ## Current limitations
 
-- `veil experience remove` implemented but not yet exercised
-  (post-reboot verification).
-- Reboot persistence not yet verified.
 - `gpgcheck=0`; no signing yet.
 - Profile manifests only drive state today; capability → config
   overlays and provisioning arrive with workspace (Day 3+).
