@@ -19,3 +19,10 @@ workspace_preferences:
   shell: bash
   editor: vim
   terminal: system
+  prompt: veilbox
+  tmux: true
+  aliases:
+    k: kubectl
+    tf: terraform
+  environment:
+    KUBECONFIG: ~/.kube/config

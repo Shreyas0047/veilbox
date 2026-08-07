@@ -19,3 +19,7 @@ workspace_preferences:
   shell: bash
   editor: vim
   terminal: system
+  prompt: plain
+  tmux: false
+  aliases:
+    ll: ls -la

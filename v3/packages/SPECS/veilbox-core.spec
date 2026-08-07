@@ -7,7 +7,7 @@
 
 Name:           veilbox-core
 Version:        %{go_version}
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Veilbox Core — Operations Platform for engineers
 
 License:        GPL-2.0-only
@@ -25,11 +25,15 @@ Veilbox Core provides the veil CLI:
 
   - veil profile / list / show / apply / diff / sync — engineer intent
   - veil experience list / info / install / remove — capability modules
+  - veil workspace / plan / apply / status / reset — user workspace
   - veil status — Veilbox and system state (profile sync included)
   - veil doctor — system, profile, and package consistency checks
 
 Profiles are intent and state, never RPMs. Experiences are delivered
-as RPM meta-packages installed through DNF.
+as RPM meta-packages installed through DNF. Workspace configuration is
+generated under ~/.config/veilbox/workspace and integrated into user
+shell files through a single marked include block; Veilbox never
+rewrites user-owned files wholesale (see ADR-0005).
 
 %prep
 %setup -q -n %{name}-%{version}
@@ -62,6 +66,18 @@ done
 %{_datadir}/veilbox/experiences/*.yaml
 
 %changelog
+* Fri Aug 07 2026 Veilbox v3 — 0.1.0-3
+- Day 4 workspace engine: structured workspace_preferences
+  (shell, editor, terminal, prompt, tmux, aliases, environment) with
+  strict declarative validation (no shell metacharacters), workspace
+  plan/apply/status/reset commands, Veilbox-owned generated files
+  under ~/.config/veilbox/workspace/, single marked include block in
+  ~/.bashrc and ~/.tmux.conf, first-touch backups under
+  ~/.config/veilbox/backups/, hash-based drift detection with
+  apply --force recovery (never overwrites whole user files),
+  capability reporting without DNF, profile-switch cleanup, workspace
+  checks in doctor.
+
 * Fri Aug 07 2026 Veilbox v3 — 0.1.0-2
 - Day 3 intent engine: profile schema (recommended/optional
   experiences, role, tags, workspace preferences), profile

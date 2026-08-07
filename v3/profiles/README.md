@@ -49,6 +49,11 @@ workspace_preferences:          # informational (workspace engine later)
 - `veil profile diff <name>` compares the machine against the profile;
   installed-but-unreferenced experiences are reported as extras and
   kept.
+- `workspace_preferences` are declarative primitives (shell, editor,
+  terminal, prompt, tmux, aliases, environment) consumed by the
+  Workspace Engine (`veil workspace apply`) — never arbitrary shell.
+  Validation rejects shell metacharacters in alias/environment values
+  (`docs/adr/0005-workspace-ownership.md`).
 
 The environment stays editable after installation: applying a profile
 is a mutation of intent, not a one-shot script.

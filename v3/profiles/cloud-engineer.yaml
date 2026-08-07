@@ -18,3 +18,9 @@ workspace_preferences:
   shell: bash
   editor: vim
   terminal: system
+  prompt: veilbox
+  tmux: false
+  aliases:
+    k: kubectl
+  environment:
+    AWS_REGION: us-east-1
