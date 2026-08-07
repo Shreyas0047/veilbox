@@ -1,26 +1,34 @@
 # Experiences
 
 An **experience** is an installable capability: a complete, coherent
-environment delivered as an RPM module (`veilbox-experience-<name>`),
-never as bare packages.
+set of Fedora packages delivered as an RPM meta-package
+(`veilbox-experience-<name>`), never as bare packages. Veilbox
+installs and removes experiences through DNF by package name, exactly
+like any other repository package.
 
-A desktop experience, for example, is not "install the compositor".
-It is the compositor plus shell, launcher, notifications, lock screen,
-idle management, clipboard, terminal, fonts, themes, wallpaper,
-Veilbox configuration, and sensible defaults — so the desktop feels
-complete immediately after installation.
+## Current catalog (v3 prototype)
 
-Compositors that do not provide a complete desktop shell get one
-provided by Veilbox (waybar-based, quickshell-based, or similar
-integrated shell), keeping each desktop experience whole.
+| Experience | Meta-package | Packages | Status |
+|---|---|---|---|
+| base-ops | veilbox-experience-base-ops | git, vim-enhanced, curl, strace | available |
+| networking-tools | veilbox-experience-networking-tools | bind-utils, traceroute, nmap-ncat, iproute, tcpdump | available |
+| terminal-ops | veilbox-experience-terminal-ops | tmux, ripgrep, htop | available |
+| observability-cli | veilbox-experience-observability-cli | sysstat, iotop, jq | available |
 
-Experience definitions and config overlays:
+Status meanings: `planned` (declared, not yet packaged), `available`
+(installable), `installed` (present in the RPM database).
 
-- `experiences/<name>.yaml` — definition: RPM meta-package name,
-  package requirements, config overlay reference, activation rules
-- `configs/<name>/` — user-level configuration overlays delivered by
-  the experience RPM under `/usr/share/veilbox/experiences/<name>/`
-  and activated per-user into `~/.config/veilbox/` by
-  `veil experience install`
+Removal semantics: DNF is the transaction authority. Removing an
+experience meta-RPM removes packages that were introduced solely as
+its dependencies and are needed by nothing else; packages the user
+already had before the experience was installed are never removed.
 
-See `docs/adr/0002-delivery-model.md` for the RPM delivery model.
+Experience definitions (`experiences/<name>.yaml`) declare the
+meta-package (`rpm:`) and the concrete packages (informational; the
+RPM `Requires:` are authoritative).
+
+Desktop experiences (compositor + complete shell + configuration)
+arrive in a later milestone.
+
+See `docs/adr/0002-delivery-model.md` for the RPM delivery model and
+`docs/day3-intent-engine.md` for the current catalog.

@@ -1,11 +1,21 @@
 name: devops
+display_name: DevOps Engineer
 description: >-
-  DevOps engineer. Builds and operates delivery pipelines across
-  source control, CI/CD, containers, and infrastructure as code.
-capabilities:
-  containers:
-    - podman
-  infrastructure:
-    - ansible
-    - terraform
-  observability: []
+  Builds and operates delivery pipelines: source control, CI/CD,
+  deployment automation, and infrastructure as code. Needs solid
+  terminal and networking foundations to diagnose failures quickly.
+role: devops
+recommended_experiences:
+  - base-ops
+  - networking-tools
+  - terminal-ops
+optional_experiences:
+  - observability-cli
+tags:
+  - ci
+  - delivery
+  - operations
+workspace_preferences:
+  shell: bash
+  editor: vim
+  terminal: system

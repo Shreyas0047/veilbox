@@ -1,0 +1,21 @@
+name: sre
+display_name: Site Reliability Engineer
+description: >-
+  Keeps systems reliable: monitoring, incident response, and
+  performance analysis. Observability tooling comes first, followed by
+  network diagnostics; terminal comfort is optional but common.
+role: sre
+recommended_experiences:
+  - base-ops
+  - observability-cli
+  - networking-tools
+optional_experiences:
+  - terminal-ops
+tags:
+  - reliability
+  - monitoring
+  - incidents
+workspace_preferences:
+  shell: bash
+  editor: vim
+  terminal: system

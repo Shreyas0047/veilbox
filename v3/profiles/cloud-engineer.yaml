@@ -1,0 +1,20 @@
+name: cloud-engineer
+display_name: Cloud Engineer
+description: >-
+  Works with cloud infrastructure and remote systems: network paths,
+  connectivity, and deployment boundaries. Networking and a solid base
+  come first; a comfortable terminal is a common extra.
+role: cloud-engineer
+recommended_experiences:
+  - base-ops
+  - networking-tools
+optional_experiences:
+  - terminal-ops
+tags:
+  - cloud
+  - connectivity
+  - infrastructure
+workspace_preferences:
+  shell: bash
+  editor: vim
+  terminal: system

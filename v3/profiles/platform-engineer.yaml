@@ -1,0 +1,21 @@
+name: platform-engineer
+display_name: Platform Engineer
+description: >-
+  Designs and runs the internal platform: shared infrastructure,
+  tooling, and self-service foundations. Deep terminal and automation
+  fluency; networking diagnostics on demand. Observability tooling may
+  be added manually when needed.
+role: platform-engineer
+recommended_experiences:
+  - base-ops
+  - terminal-ops
+optional_experiences:
+  - networking-tools
+tags:
+  - platform
+  - tooling
+  - automation
+workspace_preferences:
+  shell: bash
+  editor: vim
+  terminal: system

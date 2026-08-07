@@ -1,0 +1,8 @@
+# rpmlint configuration for veilbox-experience-* meta-packages.
+# Run with: rpmlint -r packages/rpmlintrc-experience <meta rpm>
+
+# Tool names in the experience description are legitimate words.
+addFilter("spelling-error")
+
+# Meta-packages have no files or docs of their own.
+addFilter("no-documentation")

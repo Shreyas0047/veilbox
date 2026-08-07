@@ -1,5 +1,5 @@
-# Veilbox v3 rpmlint configuration.
-# Documents accepted findings; run with: rpmlint -f rpmlintrc <rpm>
+# rpmlint configuration for veilbox-core.
+# Run with: rpmlint -r packages/rpmlintrc-core <core rpm>
 
 # Go binaries are statically linked and unstripped by design (the Go
 # toolchain embeds DWARF; split debuginfo is deferred, see
@@ -10,11 +10,5 @@ addFilter("unstripped-binary-or-object")
 # The veil binary ships no manual page yet (prototype).
 addFilter("no-manual-page-for-binary")
 
-# Tool names in the experience description are legitimate words.
-addFilter("spelling-error")
-
-# Meta-packages have no files or docs of their own.
+# Core carries no standalone documentation directory.
 addFilter("no-documentation")
-
-# Source0 is a locally generated tarball, not a remote URL.
-addFilter("invalid-url")

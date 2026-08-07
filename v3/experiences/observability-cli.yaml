@@ -1,0 +1,9 @@
+name: observability-cli
+description: >-
+  Observability command-line toolkit: system performance metrics,
+  I/O monitoring, and JSON querying for logs and APIs.
+rpm: veilbox-experience-observability-cli
+packages:
+  - sysstat
+  - iotop
+  - jq

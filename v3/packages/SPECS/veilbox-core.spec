@@ -7,7 +7,7 @@
 
 Name:           veilbox-core
 Version:        %{go_version}
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Veilbox Core — Operations Platform for engineers
 
 License:        GPL-2.0-only
@@ -23,10 +23,10 @@ Veilbox manages the engineer.
 
 Veilbox Core provides the veil CLI:
 
-  - veil profile / veil profile apply — engineer profile intent
-  - veil experience list / install / remove — capability modules
-  - veil status — Veilbox and system state
-  - veil doctor — system and package consistency checks
+  - veil profile / list / show / apply / diff / sync — engineer intent
+  - veil experience list / info / install / remove — capability modules
+  - veil status — Veilbox and system state (profile sync included)
+  - veil doctor — system, profile, and package consistency checks
 
 Profiles are intent and state, never RPMs. Experiences are delivered
 as RPM meta-packages installed through DNF.
@@ -62,6 +62,15 @@ done
 %{_datadir}/veilbox/experiences/*.yaml
 
 %changelog
+* Fri Aug 07 2026 Veilbox v3 — 0.1.0-2
+- Day 3 intent engine: profile schema (recommended/optional
+  experiences, role, tags, workspace preferences), profile
+  list/show/diff/sync, experience info, profile sync state in status,
+  profile consistency checks in doctor. Ships four profiles
+  (devops, sre, platform-engineer, cloud-engineer) and four
+  experiences (base-ops, networking-tools, terminal-ops,
+  observability-cli).
+
 * Fri Aug 07 2026 Veilbox v3 — 0.1.0-1
 - Initial Veilbox v3 vertical slice: veil CLI, profile engine,
   experience engine, DNF/RPM integration.

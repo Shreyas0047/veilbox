@@ -1,4 +1,9 @@
 name: terminal-ops
 description: >-
-  Terminal operations toolkit: terminal multiplexing, system
-  inspection, and process diagnostics. Declared but not yet packaged.
+  Terminal operations toolkit: terminal multiplexing, fast code and
+  log search, and process inspection.
+rpm: veilbox-experience-terminal-ops
+packages:
+  - tmux
+  - ripgrep
+  - htop

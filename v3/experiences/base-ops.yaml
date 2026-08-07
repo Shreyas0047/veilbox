@@ -1,0 +1,10 @@
+name: base-ops
+description: >-
+  Essential engineering base: version control, editor, transfer and
+  debugging tools every operations profile starts from.
+rpm: veilbox-experience-base-ops
+packages:
+  - git
+  - vim-enhanced
+  - curl
+  - strace
