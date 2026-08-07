@@ -24,6 +24,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/safetoken"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/settings"
 )
 
@@ -39,16 +40,120 @@ const (
 	StatusInstalled Status = "installed"
 )
 
+// Type classifies an experience. Experiences of type desktop are
+// complete desktop stacks, activated through the Desktop Engine
+// ('veil desktop'); all other experiences are type tooling.
+type Type string
+
+const (
+	// TypeTooling is the default: a capability that changes the
+	// machine (packages, tooling, services of the engineer's craft).
+	TypeTooling Type = "tooling"
+	// TypeDesktop is a complete desktop experience: compositor, shell,
+	// terminal, integration and defaults — a working desktop at first
+	// login, not a bare compositor.
+	TypeDesktop Type = "desktop"
+)
+
+// Component keys allowed in desktop experience manifests. Values are
+// either "builtin" (provided by the shell itself) or a safe-token
+// package/binary name — never shell commands.
+const (
+	CompCompositor     = "compositor"
+	CompShell          = "shell"
+	CompTerminal       = "terminal"
+	CompLauncher       = "launcher"
+	CompNotifications  = "notifications"
+	CompLock           = "lock"
+	CompIdle           = "idle"
+	CompWallpaper      = "wallpaper"
+	CompClipboard      = "clipboard"
+	CompScreenshot     = "screenshot"
+	CompDisplayManager = "display_manager"
+)
+
+// componentKeys is the complete set of recognized component keys.
+var componentKeys = map[string]bool{
+	CompCompositor: true, CompShell: true, CompTerminal: true,
+	CompLauncher: true, CompNotifications: true, CompLock: true,
+	CompIdle: true, CompWallpaper: true, CompClipboard: true,
+	CompScreenshot: true, CompDisplayManager: true,
+}
+
+// builtinAllowed reports whether a component key may be satisfied by
+// "builtin". Structural components (compositor, shell, terminal,
+// display manager) must name a real package/binary.
+func builtinAllowed(key string) bool {
+	switch key {
+	case CompCompositor, CompShell, CompTerminal, CompDisplayManager:
+		return false
+	}
+	return true
+}
+
+// desktopRequiredComponents are the component keys every desktop
+// experience must declare.
+var desktopRequiredComponents = []string{
+	CompCompositor, CompShell, CompTerminal, CompDisplayManager,
+}
+
 // Manifest is an experience catalog entry (experiences/<name>.yaml).
 type Manifest struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
+	// DisplayName is a human-readable name for the experience.
+	DisplayName string `yaml:"display_name,omitempty"`
+	// Type classifies the experience (tooling or desktop); empty means
+	// tooling. Desktop experiences declare a components map and are
+	// activated only through 'veil desktop' — never by the RPM itself.
+	Type Type `yaml:"type,omitempty"`
 	// RPM is the package name that implements this experience. Empty
 	// means the experience is planned and not yet installable.
 	RPM string `yaml:"rpm,omitempty"`
 	// Packages lists the concrete Fedora packages the meta-package
 	// pulls in (informational; the RPM Requires are authoritative).
 	Packages []string `yaml:"packages,omitempty"`
+	// Components declares the desktop stack for type: desktop
+	// experiences. Values are "builtin" or a safe-token name.
+	Components map[string]string `yaml:"components,omitempty"`
+}
+
+// Validate checks manifest constraints, including the declarative
+// grammar of desktop components.
+func (m Manifest) Validate() error {
+	switch m.Type {
+	case "", TypeTooling:
+		if len(m.Components) > 0 {
+			return fmt.Errorf("experience %q: components are only valid for type: desktop", m.Name)
+		}
+		return nil
+	case TypeDesktop:
+	default:
+		return fmt.Errorf("experience %q: unknown type %q (want %q or %q)", m.Name, m.Type, TypeTooling, TypeDesktop)
+	}
+	if m.RPM == "" {
+		return fmt.Errorf("experience %q: a desktop experience must declare an installable rpm", m.Name)
+	}
+	if len(m.Components) == 0 {
+		return fmt.Errorf("experience %q: a desktop experience must declare components", m.Name)
+	}
+	for _, key := range desktopRequiredComponents {
+		if m.Components[key] == "" {
+			return fmt.Errorf("experience %q: desktop component %q is required", m.Name, key)
+		}
+	}
+	for key, val := range m.Components {
+		if !componentKeys[key] {
+			return fmt.Errorf("experience %q: unknown component %q", m.Name, key)
+		}
+		if !safetoken.Valid(val) {
+			return fmt.Errorf("experience %q: component %q value %q uses invalid characters (safe tokens only)", m.Name, key, val)
+		}
+		if val == "builtin" && !builtinAllowed(key) {
+			return fmt.Errorf("experience %q: component %q must name a package (builtin is not valid here)", m.Name, key)
+		}
+	}
+	return nil
 }
 
 // Catalog holds the known experiences merged with system state.
@@ -91,6 +196,9 @@ func (c *Catalog) Load(name string) (Manifest, error) {
 	}
 	if m.Name != name {
 		return Manifest{}, fmt.Errorf("experience %s declares name %q", name, m.Name)
+	}
+	if err := m.Validate(); err != nil {
+		return Manifest{}, err
 	}
 	return m, nil
 }

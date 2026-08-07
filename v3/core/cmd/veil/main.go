@@ -17,6 +17,11 @@
 //	veil experience info <name>
 //	veil experience install <name>
 //	veil experience remove <name>
+//	veil desktop list
+//	veil desktop info <name>
+//	veil desktop install <name>
+//	veil desktop remove <name>
+//	veil desktop provision <name>
 //	veil workspace [plan|apply|status|reset]
 //	veil status
 //	veil doctor
@@ -30,6 +35,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Shreyas0047/veilbox/v3/core/internal/desktop"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/profile"
@@ -56,6 +62,12 @@ Commands:
   experience info <name>  Show details about an experience
   experience install <name>  Install an experience through DNF
   experience remove <name>   Remove an experience through DNF
+  desktop                 Show desktop overview and session state
+  desktop list            List desktop experiences and their status
+  desktop info <name>     Show a desktop experience's stack
+  desktop install <name>  Install + activate a desktop experience
+  desktop remove <name>   Remove a desktop experience (conservative)
+  desktop provision <name>  Regenerate Veilbox-owned desktop config
   workspace               Show the workspace overview
   workspace plan          Show what apply would do (no changes)
   workspace apply [--yes] [--force]
@@ -78,6 +90,7 @@ func main() {
 type deps struct {
 	newCatalog func() *experience.Catalog
 	newDNF     func() *dnfops.System
+	newDesktop func(c *experience.Catalog) *desktop.Engine
 }
 
 func (d deps) catalog() *experience.Catalog {
@@ -92,6 +105,13 @@ func (d deps) dnf() *dnfops.System {
 		return d.newDNF()
 	}
 	return dnfops.New()
+}
+
+func (d deps) desktopEngine() *desktop.Engine {
+	if d.newDesktop != nil {
+		return d.newDesktop(d.catalog())
+	}
+	return desktop.New(d.catalog())
 }
 
 func run(args []string, stdout, stderr io.Writer, d deps) int {
@@ -110,6 +130,8 @@ func run(args []string, stdout, stderr io.Writer, d deps) int {
 		return cmdProfile(args[1:], stdout, stderr, d)
 	case "experience":
 		return cmdExperience(args[1:], stdout, stderr, d)
+	case "desktop":
+		return cmdDesktop(args[1:], stdout, stderr, d)
 	case "workspace":
 		return cmdWorkspace(args[1:], stdout, stderr)
 	case "status":
@@ -569,6 +591,29 @@ func cmdStatus(stdout, stderr io.Writer, d deps) int {
 		fmt.Fprintf(stdout, "Experiences:    %s\n", strings.Join(installed, ", "))
 	}
 
+	if desktops, derr := d.desktopEngine().List(); derr == nil {
+		var installedDesktops []string
+		activeCompositor := ""
+		for _, en := range desktops {
+			if en.Status == experience.StatusInstalled {
+				installedDesktops = append(installedDesktops, en.Name)
+			}
+			if en.Session.Compositor != "" {
+				activeCompositor = en.Session.Compositor
+			}
+		}
+		if len(installedDesktops) == 0 {
+			fmt.Fprintln(stdout, "Desktop:        (none installed)")
+		} else {
+			fmt.Fprintf(stdout, "Desktop:        %s\n", strings.Join(installedDesktops, ", "))
+			if activeCompositor == "" {
+				fmt.Fprintf(stdout, "Session:        no graphical Veilbox desktop session detected\n")
+			} else {
+				fmt.Fprintf(stdout, "Session:        %s active\n", activeCompositor)
+			}
+		}
+	}
+
 	rel := fedoraRelease()
 	if rel != "" {
 		fmt.Fprintf(stdout, "Fedora:         %s\n", rel)
@@ -730,6 +775,81 @@ func cmdDoctor(stdout, stderr io.Writer, d deps) int {
 						fmt.Sprintf("%d drifted/conflicted item(s)", conflicts))
 				}
 			}
+		}
+	}
+
+	// Desktop health (warn-level: a desktop is optional functionality,
+	// and graphical runtime checks are skipped from a TTY session).
+	var desktopEntries []experience.Entry
+	for _, en := range entries {
+		if en.Type == experience.TypeDesktop {
+			desktopEntries = append(desktopEntries, en)
+		}
+	}
+	if len(desktopEntries) > 0 {
+		invalid := 0
+		var installedDesktop *experience.Entry
+		for i := range desktopEntries {
+			if verr := desktopEntries[i].Manifest.Validate(); verr != nil {
+				invalid++
+			}
+			if desktopEntries[i].Status == experience.StatusInstalled && installedDesktop == nil {
+				installedDesktop = &desktopEntries[i]
+			}
+		}
+		check("Desktop manifest valid", false, invalid == 0,
+			fmt.Sprintf("%d desktop experience(s)", len(desktopEntries)))
+
+		var missingPkgs []string
+		for _, en := range desktopEntries {
+			if en.Status != experience.StatusInstalled {
+				continue
+			}
+			for key, val := range en.Components {
+				if val == "builtin" {
+					continue
+				}
+				ok, err := d.dnf().IsInstalled(val)
+				if err != nil || !ok {
+					missingPkgs = append(missingPkgs, fmt.Sprintf("%s:%s", en.Name, key))
+				}
+			}
+		}
+		check("Desktop packages installed", false, len(missingPkgs) == 0,
+			fmt.Sprintf("%d missing", len(missingPkgs)))
+
+		var missingSession []string
+		var templateErr []string
+		if installedDesktop != nil {
+			sf := "/usr/share/wayland-sessions/" +
+				installedDesktop.Components[experience.CompCompositor] + ".desktop"
+			if _, err := os.Stat(sf); err != nil {
+				missingSession = append(missingSession, sf)
+			}
+			td := d.desktopEngine().TemplateDir(installedDesktop.Manifest)
+			if _, err := os.Stat(td); err != nil {
+				templateErr = append(templateErr, err.Error())
+			}
+		}
+		check("Desktop session file present", false, len(missingSession) == 0,
+			strings.Join(missingSession, ", "))
+		check("Desktop templates readable", false, len(templateErr) == 0,
+			strings.Join(templateErr, ", "))
+
+		if installedDesktop != nil &&
+			installedDesktop.Components[experience.CompShell] == "noctalia" &&
+			dnfops.Available("noctalia") {
+			_, verr := dnfops.ExecRunner{}.Run("noctalia", "config", "validate")
+			check("Desktop shell config valid", false, verr == nil,
+				"noctalia config validate")
+		}
+
+		sess := d.desktopEngine().DetectSession()
+		if sess.Graphical {
+			check("Desktop graphical session", false, sess.Compositor != "", sess.Message)
+		} else {
+			check("Desktop graphical session", false, true,
+				"skipped (no graphical session detected from this terminal)")
 		}
 	}
 

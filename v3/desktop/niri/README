@@ -1,0 +1,18 @@
+# {{.DisplayName}} — Veilbox desktop configuration
+
+Owned by the veilbox-experience-{{.Name}} package. Read-only; the
+Desktop Engine reads these templates and renders user-side
+configuration (never overwriting what already exists).
+
+| File | Purpose |
+|---|---|
+| niri.config.kdl | Niri compositor configuration template (terminal, editor, keybindings, Noctalia integration) |
+| noctalia.config.toml | Noctalia user config template — includes the Veilbox-managed file below |
+| noctalia-veilbox.toml | Veilbox-owned Noctalia settings (theme, bar, wallpaper) |
+| wallpaper.png | Veilbox default wallpaper |
+
+Package installation and desktop activation are separate
+responsibilities: installing this RPM never changes the systemd
+default target and never enables services. Activate with
+'veil desktop install {{.Name}}'; regenerate Veilbox-owned settings
+with 'veil desktop provision {{.Name}}'.

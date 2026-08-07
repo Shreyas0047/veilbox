@@ -20,6 +20,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/Shreyas0047/veilbox/v3/core/internal/safetoken"
 )
 
 // Supported preference values. Preferences are declarative primitives:
@@ -41,13 +43,6 @@ const (
 )
 
 var (
-	// wordPattern matches a single safe shell token: letters, digits
-	// and punctuation that cannot escape a quoted word.
-	wordPattern = regexp.MustCompile(`^[A-Za-z0-9_./:+\-=~]+$`)
-	// commandPattern matches a simple command: safe tokens joined by
-	// single spaces (e.g. "kubectl get pods -o wide"). It rejects
-	// every shell metacharacter: ; | & $ ` ( ) < > ' " * ? [ ] { }.
-	commandPattern = regexp.MustCompile(`^[A-Za-z0-9_./:+\-=~]+(?: [A-Za-z0-9_./:+\-=~]+)*$`)
 	// aliasKeyPattern matches alias names: no spaces or metacharacters.
 	aliasKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_.:-]+$`)
 	// envKeyPattern matches POSIX environment variable names.
@@ -82,7 +77,7 @@ func (p Preferences) Validate() error {
 	if p.Shell != "" && p.Shell != ShellBash {
 		return fmt.Errorf("unsupported shell %q (only %q is supported)", p.Shell, ShellBash)
 	}
-	if p.Editor != "" && !wordPattern.MatchString(p.Editor) {
+	if p.Editor != "" && !safetoken.Valid(p.Editor) {
 		return fmt.Errorf("invalid editor %q (want a simple command name)", p.Editor)
 	}
 	if p.Terminal != "" && !validTerminal(p.Terminal) {
@@ -95,7 +90,7 @@ func (p Preferences) Validate() error {
 		if !aliasKeyPattern.MatchString(k) {
 			return fmt.Errorf("invalid alias name %q", k)
 		}
-		if !commandPattern.MatchString(v) {
+		if !safetoken.ValidCommand(v) {
 			return fmt.Errorf("invalid alias %q: %q uses shell syntax that is not allowed (simple command with spaces only)", k, v)
 		}
 	}
@@ -103,7 +98,7 @@ func (p Preferences) Validate() error {
 		if !envKeyPattern.MatchString(k) {
 			return fmt.Errorf("invalid environment variable name %q", k)
 		}
-		if !commandPattern.MatchString(v) {
+		if !safetoken.ValidCommand(v) {
 			return fmt.Errorf("invalid environment value for %q: %q uses shell syntax that is not allowed", k, v)
 		}
 	}

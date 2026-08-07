@@ -219,3 +219,172 @@ func TestRemoveNotInstalled(t *testing.T) {
 		t.Fatal("expected not-installed error")
 	}
 }
+
+const niriDesktopYAML = `name: niri-desktop
+display_name: Niri Experience
+type: desktop
+description: Complete Niri + Noctalia desktop experience.
+rpm: veilbox-experience-niri
+components:
+  compositor: niri
+  shell: noctalia
+  terminal: kitty
+  launcher: builtin
+  notifications: builtin
+  lock: builtin
+  idle: builtin
+  wallpaper: builtin
+  clipboard: builtin
+  screenshot: builtin
+  display_manager: sddm
+packages:
+  - niri
+  - noctalia
+  - kitty
+`
+
+func TestDesktopManifestValid(t *testing.T) {
+	dir := t.TempDir()
+	writeCatalog(t, dir, map[string]string{"niri-desktop.yaml": niriDesktopYAML})
+	m, err := NewCatalogWith(dir, dnfops.NewWithRunner(newFakeRunner())).Load("niri-desktop")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if m.Type != TypeDesktop {
+		t.Fatalf("type: %s", m.Type)
+	}
+	if m.DisplayName != "Niri Experience" {
+		t.Fatalf("display_name: %q", m.DisplayName)
+	}
+	if m.Components[CompCompositor] != "niri" || m.Components[CompShell] != "noctalia" {
+		t.Fatalf("components: %v", m.Components)
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+}
+
+func TestManifestValidateRejects(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "unknown type",
+			yaml: `name: x
+type: de
+`,
+			want: "unknown type",
+		},
+		{
+			name: "components on tooling",
+			yaml: `name: x
+type: tooling
+components:
+  compositor: niri
+`,
+			want: "components are only valid for type: desktop",
+		},
+		{
+			name: "desktop without rpm",
+			yaml: `name: x
+type: desktop
+components:
+  compositor: niri
+  shell: noctalia
+  terminal: kitty
+  display_manager: sddm
+`,
+			want: "must declare an installable rpm",
+		},
+		{
+			name: "missing shell component",
+			yaml: `name: x
+type: desktop
+rpm: veilbox-experience-x
+components:
+  compositor: niri
+  terminal: kitty
+  display_manager: sddm
+`,
+			want: `component "shell" is required`,
+		},
+		{
+			name: "unknown component key",
+			yaml: `name: x
+type: desktop
+rpm: veilbox-experience-x
+components:
+  compositor: niri
+  shell: noctalia
+  terminal: kitty
+  display_manager: sddm
+  composatator: niri
+`,
+			want: "unknown component",
+		},
+		{
+			name: "shell metacharacter injection",
+			yaml: `name: x
+type: desktop
+rpm: veilbox-experience-x
+components:
+  compositor: niri
+  shell: "noctalia; rm -rf /"
+  terminal: kitty
+  display_manager: sddm
+`,
+			want: "invalid characters",
+		},
+		{
+			name: "builtin structural component",
+			yaml: `name: x
+type: desktop
+rpm: veilbox-experience-x
+components:
+  compositor: builtin
+  shell: noctalia
+  terminal: kitty
+  display_manager: sddm
+`,
+			want: "must name a package",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeCatalog(t, dir, map[string]string{"x.yaml": tc.yaml})
+			_, err := NewCatalogWith(dir, dnfops.NewWithRunner(newFakeRunner())).Load("x")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want error containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestDesktopCatalogEntryType(t *testing.T) {
+	dir := t.TempDir()
+	writeCatalog(t, dir, map[string]string{
+		"networking-tools.yaml": networkingToolsYAML,
+		"niri-desktop.yaml":     niriDesktopYAML,
+	})
+	f := newFakeRunner()
+	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
+	c := NewCatalogWith(dir, dnfops.NewWithRunner(f))
+
+	entries, err := c.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	byName := map[string]Type{}
+	for _, e := range entries {
+		byName[e.Name] = e.Type
+	}
+	if byName["networking-tools"] == TypeDesktop {
+		t.Fatalf("tooling experience must not be desktop type")
+	}
+	if byName["niri-desktop"] != TypeDesktop {
+		t.Fatalf("desktop type: %s", byName["niri-desktop"])
+	}
+}

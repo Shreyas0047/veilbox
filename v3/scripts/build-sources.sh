@@ -26,6 +26,18 @@ cp -r experiences "${STAGE}/experiences"
 # License for %license.
 cp LICENSE "${STAGE}/LICENSE"
 
+# Desktop experience sources (Veilbox-owned desktop templates and the
+# default wallpaper), staged as the veilbox-experience-niri tarball.
+EXP="veilbox-experience-niri"
+EXP_STAGE="packages/SOURCES/${EXP}-${VERSION}"
+EXP_OUT="packages/SOURCES/${EXP}-${VERSION}.tar.gz"
+rm -rf "${EXP_STAGE}" "${EXP_OUT}"
+mkdir -p "${EXP_STAGE}/desktop"
+cp -r desktop/niri "${EXP_STAGE}/desktop/niri"
+tar -czf "${EXP_OUT}" -C packages/SOURCES "${EXP}-${VERSION}"
+rm -rf "${EXP_STAGE}"
+echo "built ${EXP_OUT}"
+
 tar -czf "${OUT}" -C packages/SOURCES "${NAME}-${VERSION}"
 rm -rf "${STAGE}"
 echo "built ${OUT}"

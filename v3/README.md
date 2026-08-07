@@ -16,10 +16,12 @@ Veilbox v3 is a **ground-up, Fedora-based rebuild** of Veilbox Linux.
 - **Base system:** Fedora (replacing the Debian base of v2)
 - **Approach:** rebuilt from scratch — the existing v2 implementation is not carried forward
 - **Current state:** prototype; `veil` (Core) ships as an RPM with profile intent
-  manifests, experience catalogs, and a Workspace Engine; profiles recommend,
-  `veil profile sync` installs experiences as DNF meta-packages, and
-  `veil workspace apply` translates profile preferences into Veilbox-owned
-  user configuration (see `docs/day4-workspace.md`)
+  manifests, experience catalogs, a Workspace Engine, and a Desktop Engine;
+  profiles recommend, `veil profile sync` installs experiences as DNF
+  meta-packages, `veil workspace apply` translates profile preferences into
+  Veilbox-owned user configuration (see `docs/day4-workspace.md`), and
+  `veil desktop install` activates the Niri + Noctalia desktop —
+  install is inert, activation is explicit (see `docs/day5-desktop.md`)
 
 ## v2 preservation
 
@@ -40,6 +42,7 @@ v3/
 │   └── internal/  ← profile, experience, settings, workspace, dnfops engines
 ├── profiles/      ← profile definitions (intent — configuration, never RPMs)
 ├── experiences/   ← experience definitions (capability — shipped as RPMs)
+├── desktop/       ← desktop experience templates (niri config, shell, wallpaper)
 ├── packages/      ← RPM specs, sources, built artifacts
 ├── configs/       ← user-level config overlays delivered by experiences
 ├── kickstart/     ← Fedora kickstart files (stretch goal)
@@ -54,8 +57,9 @@ v3/
 - The `main` branch continues to host v2.
 - See `docs/adr/` for the architecture decision records (start with
   ADR-0001 and ADR-0002).
-- See `docs/day4-workspace.md` for the current prototype: what is
-  implemented, spec gotchas, and the test procedure.
+- See `docs/day4-workspace.md` for the workspace prototype and
+  `docs/day5-desktop.md` for the desktop prototype: what is
+  implemented, spec gotchas, and the test procedures.
 - The disposable development VM has passwordless sudo enabled **for
   automation only** (see ADR-0002). It is deliberately not part of any
   Veilbox artifact, kickstart, or default configuration.
@@ -71,8 +75,12 @@ veil profile apply devops
 veil profile sync --yes    # installs missing recommended experiences
 veil workspace apply --yes # translates profile preferences into user config
 veil status                # core, profile+sync state, experiences, repos
-scripts/smoke-day4.sh      # 43 checks, run on clean state
+scripts/smoke-day5.sh      # 26 checks, run on clean pre-desktop state
 ```
+
+> Desktop testing in the disposable VirtualBox VM requires the VM to
+> have **3D Acceleration** enabled (Display settings, host side) —
+> niri's documented VM requirement (ADR-0009).
 
 ## Command reference
 
@@ -91,6 +99,12 @@ veil workspace plan                  what apply would do (no changes)
 veil workspace apply [--yes] [--force]  apply profile workspace prefs
 veil workspace status                applied state, drift, conflicts
 veil workspace reset [--yes]         remove only Veilbox-managed config
+veil desktop                         desktop overview + session state
+veil desktop list                    desktop experiences + status
+veil desktop info <name>             desktop stack components
+veil desktop install <name>          DNF install + activate desktop (idempotent)
+veil desktop provision <name>        regenerate Veilbox-owned desktop config
+veil desktop remove <name>           DNF remove only; preserves config, DM, target
 veil status                          core, profile, experiences, repos
 veil doctor                          full health check
 ```
@@ -102,3 +116,8 @@ generates under `~/.config/veilbox/workspace/`, integrates through a
 single marked include block in `~/.bashrc`/`~/.tmux.conf`, backs up
 before first touch, detects drift, and never overwrites whole
 user-owned files (see `docs/adr/0005-workspace-ownership.md`).
+Desktop activation follows the same discipline one layer up: the
+experience RPM is inert, `veil desktop install` is the only
+activation path, and desktop user config is preserved after first
+touch while Veilbox-owned settings live in
+`~/.config/veilbox/desktop/` (see ADR-0006/0007/0008).
