@@ -8,6 +8,7 @@ core/veil
 packages/RPMS/
 packages/SRPMS/
 packages/build/
+packages/SOURCES/
 packages/venv/
 
 # Local dnf repository output

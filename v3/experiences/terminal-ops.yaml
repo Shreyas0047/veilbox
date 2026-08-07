@@ -1,0 +1,4 @@
+name: terminal-ops
+description: >-
+  Terminal operations toolkit: terminal multiplexing, system
+  inspection, and process diagnostics. Declared but not yet packaged.

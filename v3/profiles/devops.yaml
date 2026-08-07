@@ -1,0 +1,11 @@
+name: devops
+description: >-
+  DevOps engineer. Builds and operates delivery pipelines across
+  source control, CI/CD, containers, and infrastructure as code.
+capabilities:
+  containers:
+    - podman
+  infrastructure:
+    - ansible
+    - terraform
+  observability: []
