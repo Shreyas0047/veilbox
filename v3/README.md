@@ -21,7 +21,10 @@ Veilbox v3 is a **ground-up, Fedora-based rebuild** of Veilbox Linux.
   meta-packages, `veil workspace apply` translates profile preferences into
   Veilbox-owned user configuration (see `docs/day4-workspace.md`), and
   `veil desktop install` activates the Niri + Noctalia desktop —
-  install is inert, activation is explicit (see `docs/day5-desktop.md`)
+  install is inert, activation is explicit (see `docs/day5-desktop.md`);
+  `veil onboard` is the first-run wizard: a Bubble Tea TUI on TTYs, a
+  line UI on pipes, with a zero-change-until-review guarantee
+  (see `docs/day6-onboarding.md`)
 
 ## v2 preservation
 
@@ -57,8 +60,9 @@ v3/
 - The `main` branch continues to host v2.
 - See `docs/adr/` for the architecture decision records (start with
   ADR-0001 and ADR-0002).
-- See `docs/day4-workspace.md` for the workspace prototype and
-  `docs/day5-desktop.md` for the desktop prototype: what is
+- See `docs/day4-workspace.md` for the workspace prototype,
+  `docs/day5-desktop.md` for the desktop prototype, and
+  `docs/day6-onboarding.md` for the onboarding wizard: what is
   implemented, spec gotchas, and the test procedures.
 - The disposable development VM has passwordless sudo enabled **for
   automation only** (see ADR-0002). It is deliberately not part of any
@@ -76,6 +80,7 @@ veil profile sync --yes    # installs missing recommended experiences
 veil workspace apply --yes # translates profile preferences into user config
 veil status                # core, profile+sync state, experiences, repos
 scripts/smoke-day5.sh      # 26 checks, run on clean pre-desktop state
+scripts/smoke-day6.sh      # 17 checks: onboard TUI/line UI live smoke
 ```
 
 > Desktop testing in the disposable VirtualBox VM requires the VM to
@@ -105,6 +110,8 @@ veil desktop info <name>             desktop stack components
 veil desktop install <name>          DNF install + activate desktop (idempotent)
 veil desktop provision <name>        regenerate Veilbox-owned desktop config
 veil desktop remove <name>           DNF remove only; preserves config, DM, target
+veil onboard [--yes]                first-run wizard: role, desktop, capabilities,
+                                    workspace (TUI on TTY, line UI on pipes)
 veil status                          core, profile, experiences, repos
 veil doctor                          full health check
 ```

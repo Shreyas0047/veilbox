@@ -103,6 +103,12 @@ type Manifest struct {
 	Description string `yaml:"description"`
 	// DisplayName is a human-readable name for the experience.
 	DisplayName string `yaml:"display_name,omitempty"`
+	// Domain is the capability concept the experience belongs to
+	// (e.g. "Networking", "Observability"). It groups experiences in
+	// the onboarding capability step and in 'veil status' — the UI
+	// deals in concepts, never raw package names. Empty means the
+	// experience is uncategorized tooling.
+	Domain string `yaml:"domain,omitempty"`
 	// Type classifies the experience (tooling or desktop); empty means
 	// tooling. Desktop experiences declare a components map and are
 	// activated only through 'veil desktop' — never by the RPM itself.
@@ -121,6 +127,9 @@ type Manifest struct {
 // Validate checks manifest constraints, including the declarative
 // grammar of desktop components.
 func (m Manifest) Validate() error {
+	if m.Domain != "" && !safetoken.ValidCommand(m.Domain) {
+		return fmt.Errorf("experience %q: domain %q uses invalid characters (presentation text, safe tokens only)", m.Name, m.Domain)
+	}
 	switch m.Type {
 	case "", TypeTooling:
 		if len(m.Components) > 0 {

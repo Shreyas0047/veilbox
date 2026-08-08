@@ -1,4 +1,5 @@
 name: terminal-ops
+domain: Terminal Operations
 description: >-
   Terminal operations toolkit: terminal multiplexing, fast code and
   log search, and process inspection.

@@ -23,6 +23,7 @@
 //	veil desktop remove <name>
 //	veil desktop provision <name>
 //	veil workspace [plan|apply|status|reset]
+//	veil onboard [--yes]
 //	veil status
 //	veil doctor
 package main
@@ -74,6 +75,8 @@ Commands:
                           Apply the active profile's workspace
   workspace status        Report applied state, drift, conflicts
   workspace reset [--yes] Remove only Veilbox-managed workspace config
+  onboard [--yes]         Run the onboarding wizard (role, desktop,
+                          capabilities, workspace) and apply the plan
   status                  Show current Veilbox and system state
   doctor                  Diagnose Veilbox and system health
   version                 Print version information
@@ -134,6 +137,8 @@ func run(args []string, stdout, stderr io.Writer, d deps) int {
 		return cmdDesktop(args[1:], stdout, stderr, d)
 	case "workspace":
 		return cmdWorkspace(args[1:], stdout, stderr)
+	case "onboard":
+		return cmdOnboard(args[1:], stdout, stderr, d)
 	case "status":
 		return cmdStatus(stdout, stderr, d)
 	case "doctor":

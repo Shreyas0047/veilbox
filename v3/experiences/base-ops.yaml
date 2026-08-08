@@ -1,4 +1,5 @@
 name: base-ops
+domain: Base Operations
 description: >-
   Essential engineering base: version control, editor, transfer and
   debugging tools every operations profile starts from.
