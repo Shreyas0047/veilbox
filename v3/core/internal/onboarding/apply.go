@@ -19,7 +19,7 @@ type ApplyResult struct {
 }
 
 // Apply executes the selection through the engines in fixed order:
-// profile → experiences → workspace → desktop. The onboarding layer
+// profile → experiences → workspace → environment. The onboarding layer
 // owns sequencing only; every engine owns its own implementation.
 //
 // The apply is deliberately not transactional: each stage that
@@ -102,21 +102,21 @@ func Apply(sel Selection, in PlanInputs) (*ApplyResult, error) {
 			orDefault(prefs.Editor, "inherited"), orDefault(prefs.Terminal, "inherited")))
 	}
 
-	// Stage 4: desktop install + activation (explicitly confirmed at
-	// the review step; the Desktop Engine stays idempotent).
-	if sel.Desktop != "" {
-		switch plan.Desktop.Action {
-		case DesktopAlreadyActive:
-			record("desktop", StageSkip, plan.Desktop.DisplayName+" already active")
+	// Stage 4: environment install + activation (explicitly confirmed at
+	// the review step; the Environment Engine stays idempotent).
+	if sel.Environment != "" {
+		switch plan.Environment.Action {
+		case EnvironmentAlreadyActive:
+			record("environment", StageSkip, plan.Environment.DisplayName+" already active")
 		default:
-			ires, derr := in.Desktop.Install(sel.Desktop)
+			ires, derr := in.Environment.Install(sel.Environment)
 			if derr != nil {
-				return failApply(sel, log, res, record, "desktop", derr)
+				return failApply(sel, log, res, record, "environment", derr)
 			}
-			record("desktop", StageOK, strings.Join(ires.Steps, "; "))
+			record("environment", StageOK, strings.Join(ires.Steps, "; "))
 		}
 	} else {
-		record("desktop", StageSkip, "no desktop selected")
+		record("environment", StageSkip, "no environment selected")
 	}
 
 	// Stage 5: verification against the engines' authoritative state.
@@ -131,7 +131,24 @@ func Apply(sel Selection, in PlanInputs) (*ApplyResult, error) {
 	if err := sel.Save(); err != nil {
 		return nil, fmt.Errorf("apply completed but the selection could not be saved: %w", err)
 	}
+	// The composition is the product record (ADR-0010): recreated,
+	// never edited, written only by this apply path, atomically. It
+	// records the compatibility validation result of what was just
+	// applied; 'veil status' and 'veil doctor' read it.
+	if err := persistComposition(sel, in); err != nil {
+		return nil, fmt.Errorf("apply completed but the composition record could not be saved: %w", err)
+	}
 	return res, nil
+}
+
+// persistComposition builds and atomically saves the applied product
+// record. A failure here must not pretend the product was recorded.
+func persistComposition(sel Selection, in PlanInputs) error {
+	comp, err := recordComposition(sel, in)
+	if err != nil {
+		return err
+	}
+	return comp.Save()
 }
 
 // failApply records the failed stage, persists the ledger and returns
@@ -170,8 +187,8 @@ func Verify(sel Selection, in PlanInputs) error {
 	if len(missing) > 0 {
 		return fmt.Errorf("experiences not installed after apply: %s", strings.Join(missing, ", "))
 	}
-	if sel.Desktop != "" && !installedSet[sel.Desktop] {
-		return fmt.Errorf("desktop %q not installed after apply", sel.Desktop)
+	if sel.Environment != "" && !installedSet[sel.Environment] {
+		return fmt.Errorf("environment %q not installed after apply", sel.Environment)
 	}
 	if sel.Profile != "" {
 		m, lerr := in.Registry.Load(sel.Profile)

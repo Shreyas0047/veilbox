@@ -1,5 +1,5 @@
 // Package safetoken validates simple shell-safe tokens used across
-// Veilbox declarative configuration (workspace preferences, desktop
+// Veilbox declarative configuration (workspace preferences, environment
 // experience components, aliases, environment values).
 //
 // A safe token can only contain letters, digits and a restricted set

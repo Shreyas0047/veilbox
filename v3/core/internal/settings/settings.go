@@ -28,7 +28,7 @@ const (
 	ProfilesDir     = "profiles"
 	ExperiencesDir  = "experiences"
 	CapabilitiesDir = "capabilities"
-	DesktopDir      = "desktop"
+	EnvironmentDir  = "environment"
 
 	StateDirName = "veilbox"
 	StateFile    = "state.json"
@@ -72,12 +72,12 @@ func SystemCapabilitiesDir() string {
 	return filepath.Join(Root(), CapabilitiesDir)
 }
 
-// SystemDesktopDir returns the system desktop templates directory.
-// Each desktop experience owns a subdirectory named after it
-// (e.g. <root>/desktop/niri/), shipped by the experience RPM and
-// read-only at runtime.
-func SystemDesktopDir() string {
-	return filepath.Join(Root(), DesktopDir)
+// SystemEnvironmentDir returns the system environment templates
+// directory. Each environment experience owns a subdirectory named
+// after it (e.g. <root>/environment/<experience>/), shipped by the
+// experience RPM and read-only at runtime.
+func SystemEnvironmentDir() string {
+	return filepath.Join(Root(), EnvironmentDir)
 }
 
 // Root returns the system data root (VEILBOX_ROOT override when set).

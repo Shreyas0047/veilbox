@@ -1,4 +1,4 @@
-package desktop
+package environment
 
 import (
 	"errors"
@@ -14,8 +14,46 @@ import (
 
 const niriDesktopYAML = `name: niri-desktop
 display_name: Niri Experience
+type: environment
+description: Complete Niri + Noctalia desktop environment.
+rpm: veilbox-experience-niri
+components:
+  compositor: niri
+  desktop_shell: noctalia
+  terminal: kitty
+  launcher: builtin
+  notifications: builtin
+  lock: builtin
+  idle: builtin
+  wallpaper: builtin
+  clipboard: builtin
+  screenshot: builtin
+  display_manager: sddm
+environment:
+  config:
+    - src: niri.config.kdl
+      dest: niri/config.kdl
+    - src: noctalia.config.toml
+      dest: noctalia/config.toml
+  managed:
+    - src: noctalia-veilbox.toml
+      dest: noctalia-veilbox.toml
+  validate:
+    files:
+      - noctalia/config.toml
+    commands:
+      - [noctalia, config, validate]
+packages:
+  - niri
+  - noctalia
+  - kitty
+`
+
+// legacyDesktopYAML is the pre-ADR-0012 spelling ("desktop" type,
+// "shell" component slot). The loader must migrate it transparently.
+const legacyDesktopYAML = `name: niri-desktop
+display_name: Niri Experience
 type: desktop
-description: Complete Niri + Noctalia desktop experience.
 rpm: veilbox-experience-niri
 components:
   compositor: niri
@@ -29,10 +67,6 @@ components:
   clipboard: builtin
   screenshot: builtin
   display_manager: sddm
-packages:
-  - niri
-  - noctalia
-  - kitty
 `
 
 const terminalOpsYAML = `name: terminal-ops
@@ -42,7 +76,7 @@ rpm: veilbox-experience-terminal-ops
 
 // fakeRunner is a stateful dnfops.Runner that never touches the
 // system. It models the RPM database: dnf install/remove transactions
-// mutate it, so the Experience/Desktop Engine sees the same state
+// mutate it, so the Experience/Environment Engine sees the same state
 // transitions production DNF would produce. systemctl/pgrep responses
 // are canned.
 type fakeRunner struct {
@@ -101,8 +135,8 @@ func (f *fakeRunner) installed(pkg string) {
 	f.db[pkg] = true
 }
 
-// setupEngine builds a desktop Engine over a fake catalog, with the
-// system facade, templates, session dir and home all isolated in
+// setupEngine builds an Environment Engine over a fake catalog, with
+// the system facade, templates, session dir and home all isolated in
 // temp dirs.
 func setupEngine(t *testing.T, manifests map[string]string) (*Engine, *fakeRunner, string) {
 	t.Helper()
@@ -132,10 +166,10 @@ func setupEngine(t *testing.T, manifests map[string]string) (*Engine, *fakeRunne
 }
 
 // writeTemplates installs the RPM-owned templates for an experience
-// under the VEILBOX_ROOT/desktop/<name> directory.
+// under the VEILBOX_ROOT/environment/<name> directory.
 func writeTemplates(t *testing.T, root, name string) {
 	t.Helper()
-	dir := filepath.Join(root, "desktop", name)
+	dir := filepath.Join(root, "environment", name)
 	os.MkdirAll(dir, 0o755)
 	files := map[string]string{
 		"niri.config.kdl": `// {{.DisplayName}}
@@ -146,7 +180,7 @@ binds {
 }
 `,
 		"noctalia.config.toml": `[include]
-files = ["~/.config/veilbox/desktop/{{.Name}}/noctalia-veilbox.toml"]
+files = ["~/.config/veilbox/environment/{{.Name}}/noctalia-veilbox.toml"]
 `,
 		"noctalia-veilbox.toml": `[theme]
 mode = "dark"
@@ -166,7 +200,7 @@ func sessionFile(t *testing.T, eng *Engine) string {
 	return p
 }
 
-func TestListFiltersDesktop(t *testing.T) {
+func TestListFiltersEnvironment(t *testing.T) {
 	eng, _, _ := setupEngine(t, map[string]string{
 		"niri-desktop.yaml": niriDesktopYAML,
 		"terminal-ops.yaml": terminalOpsYAML,
@@ -176,7 +210,7 @@ func TestListFiltersDesktop(t *testing.T) {
 		t.Fatalf("list: %v", err)
 	}
 	if len(entries) != 1 {
-		t.Fatalf("want only desktop entries, got %d: %+v", len(entries), entries)
+		t.Fatalf("want only environment entries, got %d: %+v", len(entries), entries)
 	}
 	if entries[0].Name != "niri-desktop" {
 		t.Fatalf("entry: %s", entries[0].Name)
@@ -186,10 +220,34 @@ func TestListFiltersDesktop(t *testing.T) {
 	}
 }
 
+func TestLegacyManifestMigratedByLoader(t *testing.T) {
+	eng, _, _ := setupEngine(t, map[string]string{"niri-desktop.yaml": legacyDesktopYAML})
+	m, err := eng.catalog.Load("niri-desktop")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if m.Type != experience.TypeEnvironment {
+		t.Fatalf("type not migrated: %q", m.Type)
+	}
+	if m.Components[experience.CompDesktopShell] != "noctalia" {
+		t.Fatalf("shell slot not migrated: %v", m.Components)
+	}
+	if _, ok := m.Components["shell"]; ok {
+		t.Fatalf("legacy shell key left behind: %v", m.Components)
+	}
+	entries, err := eng.List()
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("legacy manifest must surface in the environment list, got %d", len(entries))
+	}
+}
+
 func TestInfoUnknown(t *testing.T) {
 	eng, _, _ := setupEngine(t, map[string]string{"niri-desktop.yaml": niriDesktopYAML})
 	if _, err := eng.Info("nope"); err == nil {
-		t.Fatal("expected error for unknown desktop")
+		t.Fatal("expected error for unknown environment")
 	}
 }
 
@@ -201,7 +259,7 @@ func TestDetectSessionFromTTY(t *testing.T) {
 	if s.Graphical {
 		t.Fatal("must not claim a graphical session from a TTY")
 	}
-	if !strings.Contains(s.Message, "no graphical Veilbox desktop session detected") {
+	if !strings.Contains(s.Message, "no graphical Veilbox environment session detected") {
 		t.Fatalf("message: %q", s.Message)
 	}
 }
@@ -218,7 +276,7 @@ func TestDetectSessionWayland(t *testing.T) {
 	if s.Compositor != "niri" {
 		t.Fatalf("compositor: %q", s.Compositor)
 	}
-	if !strings.Contains(s.Message, "graphical Veilbox desktop session detected") {
+	if !strings.Contains(s.Message, "graphical Veilbox environment session detected") {
 		t.Fatalf("message: %q", s.Message)
 	}
 }
@@ -323,7 +381,7 @@ func TestInstallFullSequence(t *testing.T) {
 	for _, p := range []string{
 		filepath.Join(cfg, "niri", "config.kdl"),
 		filepath.Join(cfg, "noctalia", "config.toml"),
-		filepath.Join(cfg, "veilbox", "desktop", "niri-desktop", "noctalia-veilbox.toml"),
+		filepath.Join(cfg, "veilbox", "environment", "niri-desktop", "noctalia-veilbox.toml"),
 	} {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("expected %s: %v", p, err)
@@ -342,10 +400,10 @@ func TestInstallMissingSessionFileFails(t *testing.T) {
 	}
 }
 
-func TestInstallNonDesktopRejected(t *testing.T) {
+func TestInstallNonEnvironmentRejected(t *testing.T) {
 	eng, _, _ := setupEngine(t, map[string]string{"terminal-ops.yaml": terminalOpsYAML})
 	if _, err := eng.Install("terminal-ops"); err == nil {
-		t.Fatal("expected non-desktop rejection")
+		t.Fatal("expected non-environment rejection")
 	}
 }
 
@@ -393,7 +451,7 @@ func TestProvisionRegeneratesVeilboxFile(t *testing.T) {
 	os.MkdirAll(filepath.Join(cfg, "noctalia"), 0o755)
 	os.WriteFile(filepath.Join(cfg, "niri", "config.kdl"), []byte("user niri config\n"), 0o644)
 	os.WriteFile(filepath.Join(cfg, "noctalia", "config.toml"), []byte("user noctalia config\n"), 0o644)
-	veilFile := filepath.Join(cfg, "veilbox", "desktop", "niri-desktop", "noctalia-veilbox.toml")
+	veilFile := filepath.Join(cfg, "veilbox", "environment", "niri-desktop", "noctalia-veilbox.toml")
 	os.MkdirAll(filepath.Dir(veilFile), 0o755)
 	os.WriteFile(veilFile, []byte("stale\n"), 0o644)
 
@@ -417,6 +475,19 @@ func TestProvisionRegeneratesVeilboxFile(t *testing.T) {
 	}
 }
 
+func TestProvisionNoManifestContractIsNoop(t *testing.T) {
+	eng, f, root := setupEngine(t, map[string]string{"niri-desktop.yaml": legacyDesktopYAML})
+	writeTemplates(t, root, "niri")
+	f.installed("veilbox-experience-niri")
+	res, err := eng.Provision("niri-desktop")
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if len(res.Created)+len(res.Preserved)+len(res.Regenerated) != 0 {
+		t.Fatalf("an environment without a data contract provisions nothing: %+v", res)
+	}
+}
+
 func TestProvisionNotInstalled(t *testing.T) {
 	eng, _, root := setupEngine(t, map[string]string{"niri-desktop.yaml": niriDesktopYAML})
 	writeTemplates(t, root, "niri")
@@ -431,7 +502,7 @@ func TestPlanRemovePreservesAndReports(t *testing.T) {
 	cfg := os.Getenv("XDG_CONFIG_HOME")
 	os.MkdirAll(filepath.Join(cfg, "niri"), 0o755)
 	os.WriteFile(filepath.Join(cfg, "niri", "config.kdl"), []byte("user config\n"), 0o644)
-	veilFile := filepath.Join(cfg, "veilbox", "desktop", "niri-desktop", "noctalia-veilbox.toml")
+	veilFile := filepath.Join(cfg, "veilbox", "environment", "niri-desktop", "noctalia-veilbox.toml")
 	os.MkdirAll(filepath.Dir(veilFile), 0o755)
 	os.WriteFile(veilFile, []byte("x\n"), 0o644)
 	f.responses[f.key("systemctl", "get-default")] = "graphical.target"

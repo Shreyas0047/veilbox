@@ -1,4 +1,4 @@
-package desktop
+package environment
 
 import (
 	"fmt"
@@ -8,8 +8,8 @@ import (
 	"github.com/Shreyas0047/veilbox/v3/core/internal/workspace"
 )
 
-// InstallPlan describes what activating a desktop experience would
-// change, computed without executing anything.
+// InstallPlan describes what activating an environment experience
+// would change, computed without executing anything.
 type InstallPlan struct {
 	Name        string
 	DisplayName string
@@ -48,10 +48,10 @@ type InstallPlan struct {
 	ExistingConfig []string
 }
 
-// PlanInstall computes the activation plan for a desktop experience.
-// It is pure read-only: nothing is installed or changed.
+// PlanInstall computes the activation plan for an environment
+// experience. It is pure read-only: nothing is installed or changed.
 func (e *Engine) PlanInstall(name string) (*InstallPlan, error) {
-	m, err := e.loadDesktopManifest(name)
+	m, err := e.loadEnvironmentManifest(name)
 	if err != nil {
 		return nil, err
 	}
@@ -86,14 +86,24 @@ func (e *Engine) PlanInstall(name string) (*InstallPlan, error) {
 	return plan, nil
 }
 
+// configDestinations returns the manifest-declared first-touch config
+// destinations, relative to the user config dir.
+func configDestinations(m experience.Manifest) []string {
+	if m.Environment == nil {
+		return nil
+	}
+	out := make([]string, 0, len(m.Environment.Config))
+	for _, f := range m.Environment.Config {
+		out = append(out, f.Dest)
+	}
+	return out
+}
+
 // firstTouchAnalysis reports which user-side config files would be
 // created and which already exist (and are therefore preserved).
 func (e *Engine) firstTouchAnalysis(cfg string, m experience.Manifest) (created, existing []string) {
-	paths := []string{
-		filepath.Join(cfg, "niri", "config.kdl"),
-		filepath.Join(cfg, "noctalia", "config.toml"),
-	}
-	for _, p := range paths {
+	for _, dest := range configDestinations(m) {
+		p := filepath.Join(cfg, dest)
 		if e.sys.fileExists(p) {
 			existing = append(existing, p)
 		} else {
@@ -109,13 +119,13 @@ type InstallResult struct {
 	Steps []string
 }
 
-// Install activates a desktop experience. Package installation and
-// desktop activation are separate responsibilities: this is the only
-// place where the display manager is enabled and the default target
-// is switched. The sequence is explicit:
+// Install activates an environment experience. Package installation
+// and environment activation are separate responsibilities: this is
+// the only place where the display manager is enabled and the default
+// target is switched. The sequence is explicit:
 //
 //  1. install the experience through the Experience Engine (DNF)
-//  2. provision Veilbox-owned desktop configuration (first-touch)
+//  2. provision Veilbox-owned environment configuration (first-touch)
 //  3. verify session registration
 //  4. enable the display manager
 //  5. set the graphical target
@@ -140,7 +150,7 @@ func (e *Engine) Install(name string) (*InstallResult, error) {
 
 	prov, err := e.Provision(name)
 	if err != nil {
-		return nil, fmt.Errorf("provision desktop configuration: %w", err)
+		return nil, fmt.Errorf("provision environment configuration: %w", err)
 	}
 	for _, f := range prov.Created {
 		res.Steps = append(res.Steps, "created "+f)
@@ -153,7 +163,7 @@ func (e *Engine) Install(name string) (*InstallResult, error) {
 	}
 
 	if !e.sys.fileExists(plan.SessionFile) {
-		return nil, fmt.Errorf("session file %s missing after install — the desktop is not registered with the display manager", plan.SessionFile)
+		return nil, fmt.Errorf("session file %s missing after install — the environment is not registered with the display manager", plan.SessionFile)
 	}
 	res.Steps = append(res.Steps, "session registered: "+plan.SessionFile)
 
@@ -182,9 +192,10 @@ func (e *Engine) Install(name string) (*InstallResult, error) {
 	return res, nil
 }
 
-// catalogIsInstalled reports whether the experience backing a desktop
-// manifest is installed, by consulting the Experience Engine catalog
-// (which resolves installed state from the RPM database).
+// catalogIsInstalled reports whether the experience backing an
+// environment manifest is installed, by consulting the Experience
+// Engine catalog (which resolves installed state from the RPM
+// database).
 func (e *Engine) catalogIsInstalled(name string) (bool, error) {
 	entries, err := e.catalog.List()
 	if err != nil {
@@ -205,13 +216,13 @@ type ProvisionResult struct {
 	Regenerated []string
 }
 
-// Provision generates Veilbox-owned desktop configuration under the
-// user's config directories. It never overwrites user-owned files:
-// the niri config and the noctalia config are first-touch only, while
-// the Veilbox-owned include file under
-// ~/.config/veilbox/desktop/<name>/ is always regenerated.
+// Provision generates Veilbox-owned environment configuration under
+// the user's config directories. What is written is declared by the
+// manifest's environment contract (ADR-0015): first-touch config
+// files are never overwritten, while the Veilbox-owned managed files
+// under ~/.config/veilbox/environment/<name>/ are always regenerated.
 func (e *Engine) Provision(name string) (*ProvisionResult, error) {
-	m, err := e.loadDesktopManifest(name)
+	m, err := e.loadEnvironmentManifest(name)
 	if err != nil {
 		return nil, err
 	}
@@ -220,54 +231,57 @@ func (e *Engine) Provision(name string) (*ProvisionResult, error) {
 		return nil, err
 	}
 	if !installed {
-		return nil, fmt.Errorf("desktop experience %q is not installed — run 'veil desktop install %s' first", name, name)
+		return nil, fmt.Errorf("environment experience %q is not installed — run 'veil environment install %s' first", name, name)
+	}
+	res := &ProvisionResult{}
+	if m.Environment == nil || (len(m.Environment.Config) == 0 && len(m.Environment.Managed) == 0) {
+		return res, nil
 	}
 	td := templateDir(m)
 	if !e.sys.fileExists(td) {
-		return nil, fmt.Errorf("desktop templates missing: %s", td)
+		return nil, fmt.Errorf("environment templates missing: %s", td)
 	}
 	cfg, err := userConfigDir()
 	if err != nil {
 		return nil, err
 	}
-	res := &ProvisionResult{}
 	prefs := e.activePreferences()
+	data := e.templateData(m, td, prefs)
 
-	if err := e.renderNiriConfig(td, cfg, m, prefs, res); err != nil {
-		return nil, err
-	}
-	if err := e.renderNoctaliaConfig(td, cfg, m, res); err != nil {
-		return nil, err
+	for _, f := range m.Environment.Config {
+		if err := e.renderFirstTouch(filepath.Join(td, f.Src), filepath.Join(cfg, f.Dest), data, res); err != nil {
+			return nil, err
+		}
 	}
 
-	veilDir := filepath.Join(cfg, "veilbox", "desktop", name)
-	veilFile := filepath.Join(veilDir, "noctalia-veilbox.toml")
-	if err := e.renderFromTemplate(filepath.Join(td, "noctalia-veilbox.toml"), veilFile, templateData{m, td}); err != nil {
-		return nil, err
+	veilDir := filepath.Join(cfg, "veilbox", "environment", name)
+	for _, f := range m.Environment.Managed {
+		dest := filepath.Join(veilDir, f.Dest)
+		if err := e.renderFromTemplate(filepath.Join(td, f.Src), dest, data); err != nil {
+			return nil, err
+		}
+		res.Regenerated = append(res.Regenerated, dest)
 	}
-	res.Regenerated = append(res.Regenerated, veilFile)
 	return res, nil
 }
 
-// templateData wraps the experience manifest with the RPM-owned
-// template directory, which templates reference for system-level
-// paths (wallpaper etc.). The system directory follows the RPM name,
-// not the experience name.
-type templateData struct {
+// TemplateData is the standard data set every environment template
+// renders with: the experience manifest (Name, DisplayName,
+// Components, ...), the RPM-owned system template dir, and the
+// resolved terminal/editor preferences.
+type TemplateData struct {
 	experience.Manifest
 	SystemDir string
+	Terminal  string
+	Editor    string
 }
 
-func (e *Engine) renderNiriConfig(td, cfg string, m experience.Manifest, prefs workspace.Preferences, res *ProvisionResult) error {
-	niriPath := filepath.Join(cfg, "niri", "config.kdl")
-	if e.sys.fileExists(niriPath) {
-		res.Preserved = append(res.Preserved, niriPath)
-		return nil
-	}
+// templateData resolves the standard template data set. Terminal and
+// editor come from the active profile's workspace preferences when a
+// binary is actually installed; otherwise the manifest's declared
+// components and the engine's safe defaults apply.
+func (e *Engine) templateData(m experience.Manifest, td string, prefs workspace.Preferences) TemplateData {
 	term := m.Components[experience.CompTerminal]
-	if term == "" {
-		term = "kitty"
-	}
 	if prefs.Terminal != "" && e.sys.hasBinary(prefs.Terminal) {
 		term = prefs.Terminal
 	}
@@ -275,28 +289,20 @@ func (e *Engine) renderNiriConfig(td, cfg string, m experience.Manifest, prefs w
 	if editor == "" || !e.sys.hasBinary(editor) {
 		editor = "vim"
 	}
-	data := struct {
-		Name        string
-		DisplayName string
-		Terminal    string
-		Editor      string
-	}{m.Name, m.DisplayName, term, editor}
-	if err := e.renderFromTemplate(filepath.Join(td, "niri.config.kdl"), niriPath, data); err != nil {
-		return err
-	}
-	res.Created = append(res.Created, niriPath)
-	return nil
+	return TemplateData{Manifest: m, SystemDir: td, Terminal: term, Editor: editor}
 }
 
-func (e *Engine) renderNoctaliaConfig(td, cfg string, m experience.Manifest, res *ProvisionResult) error {
-	noctPath := filepath.Join(cfg, "noctalia", "config.toml")
-	if e.sys.fileExists(noctPath) {
-		res.Preserved = append(res.Preserved, noctPath)
+// renderFirstTouch renders a template into a user-side config file
+// only when it does not exist yet. Existing user files are preserved
+// untouched.
+func (e *Engine) renderFirstTouch(tmplPath, outPath string, data TemplateData, res *ProvisionResult) error {
+	if e.sys.fileExists(outPath) {
+		res.Preserved = append(res.Preserved, outPath)
 		return nil
 	}
-	if err := e.renderFromTemplate(filepath.Join(td, "noctalia.config.toml"), noctPath, templateData{m, td}); err != nil {
+	if err := e.renderFromTemplate(tmplPath, outPath, data); err != nil {
 		return err
 	}
-	res.Created = append(res.Created, noctPath)
+	res.Created = append(res.Created, outPath)
 	return nil
 }

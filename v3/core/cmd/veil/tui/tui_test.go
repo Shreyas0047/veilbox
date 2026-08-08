@@ -49,7 +49,7 @@ func TestPickModelSelectsAndShowsStep(t *testing.T) {
 }
 
 func TestPickModelKeepsCurrentCursor(t *testing.T) {
-	m := newPickModel(2, "Desktop", 3)
+	m := newPickModel(2, "Environment", 3)
 	m.items[0] = pickItem{label: "None"}
 	m.items[1] = pickItem{label: "Niri"}
 	m.items[2] = pickItem{label: "Other"}
@@ -203,7 +203,7 @@ func TestWSModelCycleAndEdit(t *testing.T) {
 
 func TestReviewModelDecisionAndActivation(t *testing.T) {
 	info := onboarding.ReviewInfo{
-		Selection: onboarding.Selection{Profile: "cloud", Desktop: "niri-desktop"},
+		Selection: onboarding.Selection{Profile: "cloud", Environment: "niri-desktop"},
 		Text:      "PLAN: profile cloud\ndesktop niri-desktop\n",
 	}
 	m := newReviewModel(5, info)
@@ -217,7 +217,7 @@ func TestReviewModelDecisionAndActivation(t *testing.T) {
 
 	// Decline activation, then apply.
 	m = apply(m, runeMsg('a'), enter()).(reviewModel)
-	if !m.decision.Apply || m.decision.ActivateDesktop {
+	if !m.decision.Apply || m.decision.ActivateEnvironment {
 		t.Fatalf("decision = %+v, want apply without activation", m.decision)
 	}
 	if !strings.Contains(m.View(), "Activate niri-desktop now: no") {
@@ -316,11 +316,11 @@ func TestSelectRoleAbortViaReader(t *testing.T) {
 func TestSelectDesktopNoneViaReader(t *testing.T) {
 	var out bytes.Buffer
 	ui := NewWith(strings.NewReader("\r"), &out)
-	got, err := ui.SelectDesktop([]onboarding.DesktopChoice{{Name: "niri", DisplayName: "Niri"}}, "")
+	got, err := ui.SelectEnvironment([]onboarding.EnvironmentChoice{{Name: "niri", DisplayName: "Niri"}}, "")
 	if err != nil {
 		t.Fatalf("select desktop: %v", err)
 	}
 	if got != "" {
-		t.Fatalf("desktop = %q, want none", got)
+		t.Fatalf("environment = %q, want none", got)
 	}
 }

@@ -1,20 +1,20 @@
-// Package desktop implements the Desktop Engine: the activation layer
-// for complete desktop experiences.
+// Package environment implements the Environment Engine: the
+// activation layer for complete graphical environment experiences.
 //
 // It deliberately contains no package management of its own.
 // Installation goes through the Experience Engine, which goes through
-// DNF; the Desktop Engine only:
+// DNF; the Environment Engine only:
 //
-//   - presents desktop catalog views (list, info)
+//   - presents environment catalog views (list, info)
 //   - detects the current graphical session (or its absence)
-//   - provisions Veilbox-owned desktop configuration (first-touch)
+//   - provisions Veilbox-owned environment configuration (first-touch)
 //   - enables the selected display manager and the graphical target
 //
-// Package installation and desktop activation are separate
+// Package installation and environment activation are separate
 // responsibilities: installing veilbox-experience-<name> with DNF
 // never changes the systemd default target and never enables
-// services. 'veil desktop install' is the only activation path.
-package desktop
+// services. 'veil environment install' is the only activation path.
+package environment
 
 import (
 	"fmt"
@@ -31,7 +31,7 @@ import (
 	"github.com/Shreyas0047/veilbox/v3/core/internal/workspace"
 )
 
-// System is the host-control facade used by the Desktop Engine.
+// System is the host-control facade used by the Environment Engine.
 // Production uses real systemd/rpm/pgrep binaries; tests substitute a
 // fake runner.
 type System struct {
@@ -127,7 +127,7 @@ type Session struct {
 	// this environment.
 	Graphical bool
 	// Compositor is the running compositor of an installed Veilbox
-	// desktop experience ("" when none).
+	// environment experience ("" when none).
 	Compositor string
 	// DisplayManager is the currently active display manager ("" when
 	// none).
@@ -137,30 +137,30 @@ type Session struct {
 }
 
 // DetectSession inspects the environment and session metadata. From a
-// TTY/SSH session it reports "no graphical Veilbox desktop session
+// TTY/SSH session it reports "no graphical Veilbox environment session
 // detected" rather than guessing at state.
 func (e *Engine) DetectSession() Session {
 	s := Session{}
 	if e.sys.env("XDG_SESSION_TYPE") != "wayland" && e.sys.env("WAYLAND_DISPLAY") == "" {
-		s.Message = "no graphical Veilbox desktop session detected"
+		s.Message = "no graphical Veilbox environment session detected"
 		return s
 	}
 	s.Graphical = true
 	entries, err := e.catalog.List()
 	if err == nil {
 		for _, en := range entries {
-			if en.Type != experience.TypeDesktop || en.Status != experience.StatusInstalled {
+			if en.Type != experience.TypeEnvironment || en.Status != experience.StatusInstalled {
 				continue
 			}
 			if comp := en.Components[experience.CompCompositor]; comp != "" && e.sys.processRunning(comp) {
 				s.Compositor = comp
-				s.Message = fmt.Sprintf("graphical Veilbox desktop session detected — %s (%s)", comp, en.Name)
+				s.Message = fmt.Sprintf("graphical Veilbox environment session detected — %s (%s)", comp, en.Name)
 				break
 			}
 		}
 	}
 	if s.Compositor == "" {
-		s.Message = "graphical session active, but no Veilbox desktop compositor detected"
+		s.Message = "graphical session active, but no Veilbox environment compositor detected"
 	}
 	for _, dm := range knownDMs {
 		if e.sys.unitActive(dm) {
@@ -171,7 +171,7 @@ func (e *Engine) DetectSession() Session {
 	return s
 }
 
-// Component is a desktop stack component with its role resolved.
+// Component is an environment stack component with its role resolved.
 type Component struct {
 	Key     string
 	Value   string
@@ -180,13 +180,14 @@ type Component struct {
 
 // displayOrder renders components in a stable, meaningful order.
 var displayOrder = []string{
-	experience.CompCompositor, experience.CompShell, experience.CompTerminal,
+	experience.CompCompositor, experience.CompDesktopShell, experience.CompTerminal,
 	experience.CompLauncher, experience.CompNotifications, experience.CompLock,
 	experience.CompIdle, experience.CompWallpaper, experience.CompClipboard,
 	experience.CompScreenshot, experience.CompDisplayManager,
 }
 
-// Entry is a desktop experience with catalog state and session info.
+// Entry is an environment experience with catalog state and session
+// info.
 type Entry struct {
 	experience.Entry
 	Session Session
@@ -203,24 +204,25 @@ func (e Entry) ComponentList() []Component {
 	return out
 }
 
-// Engine is the Desktop Engine.
+// Engine is the Environment Engine.
 type Engine struct {
 	catalog *experience.Catalog
 	sys     *System
 }
 
-// New returns a Desktop Engine over the given experience catalog.
+// New returns an Environment Engine over the given experience catalog.
 func New(catalog *experience.Catalog) *Engine {
 	return &Engine{catalog: catalog, sys: NewSystem()}
 }
 
-// NewWith returns a Desktop Engine with explicit system facade (tests).
+// NewWith returns an Environment Engine with explicit system facade
+// (tests).
 func NewWith(catalog *experience.Catalog, sys *System) *Engine {
 	return &Engine{catalog: catalog, sys: sys}
 }
 
-// List returns installed/available desktop experiences with session
-// state.
+// List returns installed/available environment experiences with
+// session state.
 func (e *Engine) List() ([]Entry, error) {
 	entries, err := e.catalog.List()
 	if err != nil {
@@ -229,7 +231,7 @@ func (e *Engine) List() ([]Entry, error) {
 	session := e.DetectSession()
 	var out []Entry
 	for _, en := range entries {
-		if en.Type != experience.TypeDesktop {
+		if en.Type != experience.TypeEnvironment {
 			continue
 		}
 		out = append(out, Entry{Entry: en, Session: session})
@@ -238,7 +240,7 @@ func (e *Engine) List() ([]Entry, error) {
 	return out, nil
 }
 
-// Info returns a single desktop experience by name.
+// Info returns a single environment experience by name.
 func (e *Engine) Info(name string) (*Entry, error) {
 	entries, err := e.List()
 	if err != nil {
@@ -249,18 +251,18 @@ func (e *Engine) Info(name string) (*Entry, error) {
 			return &entries[i], nil
 		}
 	}
-	return nil, fmt.Errorf("desktop experience %q not found", name)
+	return nil, fmt.Errorf("environment experience %q not found", name)
 }
 
-// loadDesktopManifest loads a manifest and enforces it is a desktop
-// experience.
-func (e *Engine) loadDesktopManifest(name string) (experience.Manifest, error) {
+// loadEnvironmentManifest loads a manifest and enforces it is an
+// environment experience.
+func (e *Engine) loadEnvironmentManifest(name string) (experience.Manifest, error) {
 	m, err := e.catalog.Load(name)
 	if err != nil {
 		return experience.Manifest{}, err
 	}
-	if m.Type != experience.TypeDesktop {
-		return experience.Manifest{}, fmt.Errorf("experience %q is not a desktop experience", name)
+	if m.Type != experience.TypeEnvironment {
+		return experience.Manifest{}, fmt.Errorf("experience %q is not an environment experience", name)
 	}
 	return m, nil
 }
@@ -278,10 +280,15 @@ func userConfigDir() (string, error) {
 	return filepath.Join(home, ".config"), nil
 }
 
+// ConfigDir exposes the user config root for external health checks.
+func ConfigDir() (string, error) {
+	return userConfigDir()
+}
+
 // activePreferences returns the workspace preferences of the active
 // profile (zero value when none is set). Profiles are authoritative
-// for general user preferences; the desktop experience consumes only
-// the fields it can use.
+// for general user preferences; the environment experience consumes
+// only the fields it can use.
 func (e *Engine) activePreferences() workspace.Preferences {
 	st, err := profile.Active()
 	if err != nil || st.ActiveProfile == "" {
@@ -300,21 +307,28 @@ func (e *Engine) sessionFilePath(compositor string) string {
 	return filepath.Join(e.sys.sessionDir, compositor+".desktop")
 }
 
-// templateDir returns the RPM-owned template directory of a desktop
-// experience. The directory mirrors the RPM package name (the
-// veilbox-experience- prefix is stripped): the RPM owns its layout,
-// so the engine discovers it from the manifest rather than assuming
-// it matches the experience name.
+// templateDir returns the RPM-owned template directory of an
+// environment experience. The directory mirrors the RPM package name
+// (the veilbox-experience- prefix is stripped): the RPM owns its
+// layout, so the engine discovers it from the manifest rather than
+// assuming it matches the experience name.
 func templateDir(m experience.Manifest) string {
 	dir := m.RPM
 	if dir == "" {
 		dir = m.Name
 	}
 	dir = strings.TrimPrefix(dir, "veilbox-experience-")
-	return filepath.Join(settings.SystemDesktopDir(), dir)
+	return filepath.Join(settings.SystemEnvironmentDir(), dir)
 }
 
 // TemplateDir exposes templateDir for external health checks.
 func (e *Engine) TemplateDir(m experience.Manifest) string {
 	return templateDir(m)
+}
+
+// SessionDir exposes the wayland-sessions registration directory
+// (shared engine mechanics; doctor's session-file check must look in
+// the same place the engine registers sessions).
+func (e *Engine) SessionDir() string {
+	return e.sys.sessionDir
 }

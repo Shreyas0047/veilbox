@@ -97,14 +97,14 @@ func (u *UI) SelectRole(choices []onboarding.RoleChoice, current string) (string
 	return m.value, nil
 }
 
-// SelectDesktop implements onboarding.UI.
-func (u *UI) SelectDesktop(choices []onboarding.DesktopChoice, current string) (string, error) {
+// SelectEnvironment implements onboarding.UI.
+func (u *UI) SelectEnvironment(choices []onboarding.EnvironmentChoice, current string) (string, error) {
 	step := u.nextStep()
 	n := len(choices) + 1
-	m := newPickModel(step, "Desktop", n)
+	m := newPickModel(step, "Environment", n)
 	m.items[0] = pickItem{
-		label:  "No desktop",
-		detail: "Skip the desktop step; keep the machine headless.",
+		label:  "No environment",
+		detail: "Skip the environment step; keep the machine headless.",
 	}
 	m.currentIdx = 0
 	for i, c := range choices {

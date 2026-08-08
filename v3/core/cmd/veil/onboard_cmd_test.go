@@ -28,7 +28,7 @@ workspace_preferences:
 // profiles, HOME, session dir, PATH and a fake runner.
 func setupOnboardCLI(t *testing.T) (deps, *fakeCLIRunner, string) {
 	t.Helper()
-	d, f := setupDesktopCLI(t)
+	d, f := setupEnvironmentCLI(t)
 	profDir := filepath.Join(os.Getenv("VEILBOX_ROOT"), "profiles")
 	if err := os.MkdirAll(profDir, 0o755); err != nil {
 		t.Fatal(err)

@@ -16,16 +16,16 @@ Veilbox v3 is a **ground-up, Fedora-based rebuild** of Veilbox Linux.
 - **Base system:** Fedora (replacing the Debian base of v2)
 - **Approach:** rebuilt from scratch — the existing v2 implementation is not carried forward
 - **Current state:** prototype; `veil` (Core) ships as an RPM with profile intent
-  manifests, capability manifests, experience catalogs, a Workspace Engine, and a
-  Desktop Engine; profiles recommend **capabilities**, the Experience Engine
+  manifests, capability manifests, experience catalogs, a Workspace Engine, and an
+  Environment Engine; profiles recommend **capabilities**, the Experience Engine
   derives the experiences that implement them, and `veil profile sync` installs
   them as DNF meta-packages (see `docs/capability-layer.md`); `veil workspace
   apply` translates profile preferences into Veilbox-owned user configuration
-  (see `docs/day4-workspace.md`), and `veil desktop install` activates the Niri +
-  Noctalia desktop — install is inert, activation is explicit (see
-  `docs/day5-desktop.md`); `veil onboard` is the first-run wizard: a Bubble Tea
-  TUI on TTYs, a line UI on pipes, with a zero-change-until-review guarantee
-  (see `docs/day6-onboarding.md`)
+  (see `docs/day4-workspace.md`), and `veil environment install` activates the
+  Niri + Noctalia environment — install is inert, activation is explicit (see
+  `docs/day5-desktop.md`, `docs/day7-environment-composition.md`); `veil onboard`
+  is the first-run wizard: a Bubble Tea TUI on TTYs, a line UI on pipes, with a
+  zero-change-until-review guarantee (see `docs/day6-onboarding.md`)
 
 ## v2 preservation
 
@@ -48,7 +48,7 @@ v3/
 ├── profiles/      ← profile definitions (intent — configuration, never RPMs)
 ├── capabilities/  ← capability definitions (intent concepts, ADR-0011)
 ├── experiences/   ← experience definitions (capability — shipped as RPMs)
-├── desktop/       ← desktop experience templates (niri config, shell, wallpaper)
+├── environment/   ← environment experience templates (niri config, shell, wallpaper)
 ├── packages/      ← RPM specs, sources, built artifacts
 ├── configs/       ← user-level config overlays delivered by experiences
 ├── kickstart/     ← Fedora kickstart files (stretch goal)
@@ -64,9 +64,12 @@ v3/
 - See `docs/adr/` for the architecture decision records (start with
   ADR-0001 and ADR-0002).
 - See `docs/day4-workspace.md` for the workspace prototype,
-  `docs/day5-desktop.md` for the desktop prototype, and
-  `docs/day6-onboarding.md` for the onboarding wizard: what is
-  implemented, spec gotchas, and the test procedures.
+  `docs/day5-desktop.md` for the desktop prototype,
+  `docs/day6-onboarding.md` for the onboarding wizard, and
+  `docs/day7-environment-composition.md` for the environment engine,
+  the composition record (ADR-0010), and the provisioning contract
+  (ADR-0015): what is implemented, spec gotchas, and the test
+  procedures.
 - See `docs/capability-layer.md` for the capability axis (ADR-0011):
   profiles recommend capabilities, the Experience Engine derives
   experiences, and `scripts/smoke-capabilities.sh` drives the accepted
@@ -86,8 +89,9 @@ veil profile apply devops
 veil profile sync --yes    # installs missing recommended experiences
 veil workspace apply --yes # translates profile preferences into user config
 veil status                # core, profile+sync state, experiences, repos
-scripts/smoke-day5.sh      # 26 checks, run on clean pre-desktop state
+scripts/smoke-day5.sh      # 29 checks, lifecycle-state-aware (fresh or activated)
 scripts/smoke-day6.sh      # 17 checks: onboard TUI/line UI live smoke
+scripts/smoke-day7.sh      # 33 checks: environment surface, alias parity, composition record
 scripts/smoke-capabilities.sh # 16 checks: the capability-layer demo
 ```
 
@@ -114,13 +118,13 @@ veil workspace plan                  what apply would do (no changes)
 veil workspace apply [--yes] [--force]  apply profile workspace prefs
 veil workspace status                applied state, drift, conflicts
 veil workspace reset [--yes]         remove only Veilbox-managed config
-veil desktop                         desktop overview + session state
-veil desktop list                    desktop experiences + status
-veil desktop info <name>             desktop stack components
-veil desktop install <name>          DNF install + activate desktop (idempotent)
-veil desktop provision <name>        regenerate Veilbox-owned desktop config
-veil desktop remove <name>           DNF remove only; preserves config, DM, target
-veil onboard [--yes]                first-run wizard: role, desktop, capabilities,
+veil environment                   environment overview + session state
+veil environment list              environment experiences + status
+veil environment info <name>       environment stack components
+veil environment install <name>    DNF install + activate environment (idempotent)
+veil environment provision <name>  regenerate Veilbox-owned environment config
+veil environment remove <name>     DNF remove only; preserves config, DM, target
+veil onboard [--yes]               first-run wizard: role, environment, capabilities,
                                     workspace (TUI on TTY, line UI on pipes)
 veil status                          core, profile, experiences, repos
 veil doctor                          full health check
@@ -133,8 +137,12 @@ generates under `~/.config/veilbox/workspace/`, integrates through a
 single marked include block in `~/.bashrc`/`~/.tmux.conf`, backs up
 before first touch, detects drift, and never overwrites whole
 user-owned files (see `docs/adr/0005-workspace-ownership.md`).
-Desktop activation follows the same discipline one layer up: the
-experience RPM is inert, `veil desktop install` is the only
-activation path, and desktop user config is preserved after first
-touch while Veilbox-owned settings live in
-`~/.config/veilbox/desktop/` (see ADR-0006/0007/0008).
+Environment activation follows the same discipline one layer up: the
+experience RPM is inert, `veil environment install` is the only
+activation path (`veil desktop` remains accepted as an alias for one
+release), and environment user config is preserved after first touch
+while Veilbox-owned settings live in
+`~/.config/veilbox/environment/` (see ADR-0006/0007/0008). The
+applied product is recorded in `~/.config/veilbox/composition.json`
+(ADR-0010), and environments are catalog data contracts with no
+per-environment code in Core (ADR-0012/0015).

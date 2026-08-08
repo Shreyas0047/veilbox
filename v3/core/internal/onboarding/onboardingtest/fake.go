@@ -14,7 +14,9 @@ import (
 	"testing"
 )
 
-// TestDesktopYAML is a minimal desktop experience catalog entry.
+// TestDesktopYAML is a minimal environment experience catalog entry
+// (kept under the legacy "desktop" spelling to exercise loader
+// migration, plus a canonical "environment" twin in TestEnvironmentYAML).
 const TestDesktopYAML = `name: niri-desktop
 display_name: Niri Experience
 type: desktop
@@ -32,6 +34,45 @@ components:
   clipboard: builtin
   screenshot: builtin
   display_manager: sddm
+packages:
+  - niri
+  - noctalia
+  - kitty
+`
+
+// TestEnvironmentYAML is a minimal environment experience catalog
+// entry in the canonical (ADR-0012/0015) spelling.
+const TestEnvironmentYAML = `name: niri-desktop
+display_name: Niri Experience
+type: environment
+description: Complete Niri + Noctalia desktop environment.
+rpm: veilbox-experience-niri
+components:
+  compositor: niri
+  desktop_shell: noctalia
+  terminal: kitty
+  launcher: builtin
+  notifications: builtin
+  lock: builtin
+  idle: builtin
+  wallpaper: builtin
+  clipboard: builtin
+  screenshot: builtin
+  display_manager: sddm
+environment:
+  config:
+    - src: niri.config.kdl
+      dest: niri/config.kdl
+    - src: noctalia.config.toml
+      dest: noctalia/config.toml
+  managed:
+    - src: noctalia-veilbox.toml
+      dest: noctalia-veilbox.toml
+  validate:
+    files:
+      - noctalia/config.toml
+    commands:
+      - [noctalia, config, validate]
 packages:
   - niri
   - noctalia
@@ -204,7 +245,7 @@ func SetupEnv(t *testing.T) Env {
 		t.Fatal(err)
 	}
 	for name, content := range map[string]string{
-		"niri-desktop.yaml":     TestDesktopYAML,
+		"niri-desktop.yaml":     TestEnvironmentYAML,
 		"networking-tools.yaml": TestToolYAML,
 	} {
 		if err := os.WriteFile(filepath.Join(catDir, name), []byte(content), 0o644); err != nil {
@@ -233,7 +274,7 @@ func SetupEnv(t *testing.T) Env {
 		t.Fatal(err)
 	}
 
-	tmplDir := filepath.Join(root, "desktop", "niri")
+	tmplDir := filepath.Join(root, "environment", "niri")
 	if err := os.MkdirAll(tmplDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/onboarding"
 )
 
 type cliResult struct {
@@ -557,5 +559,138 @@ func TestDoctorPassesWithProfileChecks(t *testing.T) {
 		if !strings.Contains(r.stdout, "All critical checks passed") {
 			t.Fatalf("out=%q", r.stdout)
 		}
+	}
+}
+
+// writeComposition seeds a composition record into the test state dir.
+func writeComposition(t *testing.T, cfgDir, envName, envRPM string, installed string) {
+	t.Helper()
+	comp := onboarding.Composition{
+		SchemaVersion: onboarding.CompositionSchemaVersion,
+		AppliedAt:     "2026-08-08T00:00:00Z",
+		Profile:       "devops",
+		Capabilities:  []string{capability.BaseName},
+		Experiences:   []string{"networking-tools"},
+		Environment: &onboarding.EnvironmentRecord{
+			Name:       envName,
+			RPM:        envRPM,
+			Components: map[string]string{experience.CompCompositor: "niri"},
+		},
+		Validation: onboarding.ValidationRecord{Valid: true, Notes: []string{"ok"}},
+	}
+	dir := filepath.Join(cfgDir, "veilbox")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.MarshalIndent(&comp, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, onboarding.CompositionFile), append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStatusCompositionDrivenEnvironment(t *testing.T) {
+	root := t.TempDir()
+	writeProfile(t, root, "devops", cliDevopsYAML)
+	catalogDir := filepath.Join(root, "experiences")
+	capDir := filepath.Join(root, "capabilities")
+	writeTestCatalog(t, catalogDir, capDir)
+	if err := os.WriteFile(filepath.Join(catalogDir, "niri-desktop.yaml"), []byte(cliNiriDesktopYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VEILBOX_ROOT", root)
+	cfg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	f := &fakeCLIRunner{responses: map[string]string{}, errByCmd: map[string]error{}}
+	dnf := dnfops.NewWithRunner(f)
+	d := deps{
+		newCatalog: func() *experience.Catalog {
+			return experience.NewCatalogWith(catalogDir, dnf)
+		},
+		newDNF: func() *dnfops.System { return dnf },
+		newCapabilities: func() *capability.Registry {
+			return capability.NewRegistryDir(capDir)
+		},
+	}
+	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
+
+	writeComposition(t, cfg, "niri-desktop", "veilbox-experience-niri", "")
+	r := runCLI(t, d, "status")
+	if r.code != 0 {
+		t.Fatalf("code=%d err=%q", r.code, r.stderr)
+	}
+	for _, want := range []string{
+		"Composition:    applied 2026-08-08T00:00:00Z (schema 1)",
+		"Environment:    niri-desktop — recorded but package veilbox-experience-niri not installed (drift)",
+	} {
+		if !strings.Contains(r.stdout, want) {
+			t.Fatalf("missing %q in:\n%s", want, r.stdout)
+		}
+	}
+
+	// Package present again: the recorded environment is confirmed
+	// against the RPM database, never guessed.
+	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = "veilbox-experience-networking-tools\nveilbox-experience-niri\n"
+	r = runCLI(t, d, "status")
+	if r.code != 0 {
+		t.Fatalf("code=%d err=%q", r.code, r.stderr)
+	}
+	if !strings.Contains(r.stdout, "Environment:    niri-desktop (veilbox-experience-niri)") {
+		t.Fatalf("missing confirmed environment line in:\n%s", r.stdout)
+	}
+	if strings.Contains(r.stdout, "drift") {
+		t.Fatalf("no drift expected with packages present:\n%s", r.stdout)
+	}
+}
+
+func TestDoctorCompositionChecks(t *testing.T) {
+	root := t.TempDir()
+	writeProfile(t, root, "devops", cliDevopsYAML)
+	catalogDir := filepath.Join(root, "experiences")
+	capDir := filepath.Join(root, "capabilities")
+	writeTestCatalog(t, catalogDir, capDir)
+	if err := os.WriteFile(filepath.Join(catalogDir, "niri-desktop.yaml"), []byte(cliNiriDesktopYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VEILBOX_ROOT", root)
+	cfg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	f := &fakeCLIRunner{responses: map[string]string{}, errByCmd: map[string]error{}}
+	dnf := dnfops.NewWithRunner(f)
+	d := deps{
+		newCatalog: func() *experience.Catalog {
+			return experience.NewCatalogWith(catalogDir, dnf)
+		},
+		newDNF: func() *dnfops.System { return dnf },
+		newCapabilities: func() *capability.Registry {
+			return capability.NewRegistryDir(capDir)
+		},
+	}
+	f.installed("veilbox-experience-networking-tools")
+	f.installed("veilbox-experience-niri")
+	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = "veilbox-experience-networking-tools\nveilbox-experience-niri\n"
+
+	writeComposition(t, cfg, "niri-desktop", "veilbox-experience-niri", "")
+	r := runCLI(t, d, "doctor")
+	for _, want := range []string{
+		"Composition record parses",
+		"Composition consistent with live state",
+	} {
+		if !strings.Contains(r.stdout, want) {
+			t.Fatalf("missing %q in:\n%s", want, r.stdout)
+		}
+	}
+	if !strings.Contains(r.stdout, "consistent with live state") {
+		t.Fatalf("no drift expected:\n%s", r.stdout)
+	}
+
+	// Drift: the recorded experience package disappears.
+	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = "veilbox-experience-niri\n"
+	f.notInstalled("veilbox-experience-networking-tools")
+	r = runCLI(t, d, "doctor")
+	if !strings.Contains(r.stdout, "drift: experience networking-tools no longer installed") {
+		t.Fatalf("expected recorded drift in:\n%s", r.stdout)
 	}
 }

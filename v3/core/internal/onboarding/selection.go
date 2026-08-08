@@ -3,10 +3,11 @@
 // previewable workstation plan.
 //
 // Onboarding is an orchestration layer, never a second state system:
-// the Profile, Experience, Workspace and Desktop engines remain the
-// authoritative state holders. The onboarding selection file
+// the Profile, Experience, Workspace and Environment engines remain
+// the authoritative state holders. The onboarding selection file
 // (~/.config/veilbox/onboarding.json) is a draft of intent plus an
-// apply log — engines decide truth, onboarding only sequences.
+// apply log; the applied product record is composition.json
+// (ADR-0010). Engines decide truth, onboarding only sequences.
 package onboarding
 
 import (
@@ -84,7 +85,11 @@ type Selection struct {
 	SchemaVersion int    `json:"schema_version"`
 	UpdatedAt     string `json:"updated_at,omitempty"`
 	Profile       string `json:"profile,omitempty"`
-	Desktop       string `json:"desktop,omitempty"`
+	Environment   string `json:"environment,omitempty"`
+	// Desktop is the legacy key for the environment selection
+	// (ADR-0012 rename). Load migrates it into Environment on read;
+	// nothing writes it.
+	Desktop string `json:"desktop,omitempty"`
 	// Capabilities are the selected capability concepts (ADR-0011).
 	// The experience list is derived from them; an empty list marks a
 	// pre-capability (v1) selection, which apply still honors via its
@@ -122,7 +127,18 @@ func Load() (Selection, error) {
 	if err := json.Unmarshal(data, &sel); err != nil {
 		return sel, fmt.Errorf("parse onboarding selection %s: %w", path, err)
 	}
+	sel.migrate()
 	return sel, nil
+}
+
+// migrate moves the legacy "desktop" selection key into
+// "environment" (ADR-0012). The loader is the single migration point;
+// saves always write the canonical key.
+func (s *Selection) migrate() {
+	if s.Environment == "" && s.Desktop != "" {
+		s.Environment = s.Desktop
+	}
+	s.Desktop = ""
 }
 
 // Save atomically persists the selection and refreshes UpdatedAt.
@@ -212,9 +228,9 @@ func (s *Selection) Derive(res *capability.Resolver) error {
 
 // Problems validates the selection against the registries: unknown
 // profiles, unknown capabilities, unknown or non-installable
-// experiences, desktop references in the capability step, and invalid
-// workspace subset values. The plan refuses to apply while problems
-// exist.
+// experiences, environment references in the capability step, and
+// invalid workspace subset values. The plan refuses to apply while
+// problems exist.
 func (s Selection) Problems(reg *profile.Registry, capReg *capability.Registry, cat *experience.Catalog) []string {
 	var out []string
 	if s.Profile == "" {
@@ -232,15 +248,15 @@ func (s Selection) Problems(reg *profile.Registry, capReg *capability.Registry, 
 		}
 	}
 
-	if s.Desktop != "" {
-		m, err := cat.Load(s.Desktop)
+	if s.Environment != "" {
+		m, err := cat.Load(s.Environment)
 		switch {
 		case err != nil:
-			out = append(out, fmt.Sprintf("desktop %q is not a known experience", s.Desktop))
-		case m.Type != experience.TypeDesktop:
-			out = append(out, fmt.Sprintf("desktop %q is not a desktop experience", s.Desktop))
+			out = append(out, fmt.Sprintf("environment %q is not a known experience", s.Environment))
+		case m.Type != experience.TypeEnvironment:
+			out = append(out, fmt.Sprintf("environment %q is not an environment experience", s.Environment))
 		case m.RPM == "":
-			out = append(out, fmt.Sprintf("desktop %q is planned and not installable", s.Desktop))
+			out = append(out, fmt.Sprintf("environment %q is planned and not installable", s.Environment))
 		}
 	}
 
@@ -249,8 +265,8 @@ func (s Selection) Problems(reg *profile.Registry, capReg *capability.Registry, 
 		switch {
 		case err != nil:
 			out = append(out, fmt.Sprintf("experience %q is not known", name))
-		case m.Type == experience.TypeDesktop:
-			out = append(out, fmt.Sprintf("experience %q is a desktop; it belongs in the desktop step", name))
+		case m.Type == experience.TypeEnvironment:
+			out = append(out, fmt.Sprintf("experience %q is an environment; it belongs in the environment step", name))
 		case m.RPM == "":
 			out = append(out, fmt.Sprintf("experience %q is planned and not installable", name))
 		}

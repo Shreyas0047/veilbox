@@ -45,27 +45,32 @@ const (
 	StatusInstalled Status = "installed"
 )
 
-// Type classifies an experience. Experiences of type desktop are
-// complete desktop stacks, activated through the Desktop Engine
-// ('veil desktop'); all other experiences are type tooling.
+// Type classifies an experience. Experiences of type environment are
+// complete graphical environments, activated through the Environment
+// Engine ('veil environment'); all other experiences are type tooling.
 type Type string
 
 const (
 	// TypeTooling is the default: a capability that changes the
 	// machine (packages, tooling, services of the engineer's craft).
 	TypeTooling Type = "tooling"
-	// TypeDesktop is a complete desktop experience: compositor, shell,
-	// terminal, integration and defaults — a working desktop at first
-	// login, not a bare compositor.
+	// TypeEnvironment is a complete environment experience:
+	// compositor, desktop shell, terminal, integration and defaults —
+	// a working environment at first login, not a bare compositor
+	// (ADR-0012).
+	TypeEnvironment Type = "environment"
+	// TypeDesktop is the legacy name of the environment type
+	// (ADR-0012 rename). Manifests and state are migrated to
+	// TypeEnvironment by the loader on read; nothing writes it.
 	TypeDesktop Type = "desktop"
 )
 
-// Component keys allowed in desktop experience manifests. Values are
-// either "builtin" (provided by the shell itself) or a safe-token
+// Component keys allowed in environment experience manifests. Values
+// are either "builtin" (provided by the shell itself) or a safe-token
 // package/binary name — never shell commands.
 const (
 	CompCompositor     = "compositor"
-	CompShell          = "shell"
+	CompDesktopShell   = "desktop_shell"
 	CompTerminal       = "terminal"
 	CompLauncher       = "launcher"
 	CompNotifications  = "notifications"
@@ -77,29 +82,34 @@ const (
 	CompDisplayManager = "display_manager"
 )
 
+// legacyCompShell is the pre-ADR-0012 name of the desktop shell
+// component slot ("shell" collided with the workspace's login shell
+// concept). The loader migrates it on read; nothing writes it.
+const legacyCompShell = "shell"
+
 // componentKeys is the complete set of recognized component keys.
 var componentKeys = map[string]bool{
-	CompCompositor: true, CompShell: true, CompTerminal: true,
+	CompCompositor: true, CompDesktopShell: true, CompTerminal: true,
 	CompLauncher: true, CompNotifications: true, CompLock: true,
 	CompIdle: true, CompWallpaper: true, CompClipboard: true,
 	CompScreenshot: true, CompDisplayManager: true,
 }
 
 // builtinAllowed reports whether a component key may be satisfied by
-// "builtin". Structural components (compositor, shell, terminal,
-// display manager) must name a real package/binary.
+// "builtin". Structural components (compositor, desktop shell,
+// terminal, display manager) must name a real package/binary.
 func builtinAllowed(key string) bool {
 	switch key {
-	case CompCompositor, CompShell, CompTerminal, CompDisplayManager:
+	case CompCompositor, CompDesktopShell, CompTerminal, CompDisplayManager:
 		return false
 	}
 	return true
 }
 
-// desktopRequiredComponents are the component keys every desktop
-// experience must declare.
-var desktopRequiredComponents = []string{
-	CompCompositor, CompShell, CompTerminal, CompDisplayManager,
+// environmentRequiredComponents are the component keys every
+// environment experience must declare.
+var environmentRequiredComponents = []string{
+	CompCompositor, CompDesktopShell, CompTerminal, CompDisplayManager,
 }
 
 // Manifest is an experience catalog entry (experiences/<name>.yaml).
@@ -114,9 +124,11 @@ type Manifest struct {
 	// deals in concepts, never raw package names. Empty means the
 	// experience is uncategorized tooling.
 	Domain string `yaml:"domain,omitempty"`
-	// Type classifies the experience (tooling or desktop); empty means
-	// tooling. Desktop experiences declare a components map and are
-	// activated only through 'veil desktop' — never by the RPM itself.
+	// Type classifies the experience (tooling or environment); empty
+	// means tooling. Environment experiences declare a components map
+	// and are activated only through 'veil environment' — never by the
+	// RPM itself. The legacy name "desktop" (ADR-0012) is accepted on
+	// read and migrated by the loader.
 	Type Type `yaml:"type,omitempty"`
 	// RPM is the package name that implements this experience. Empty
 	// means the experience is planned and not yet installable.
@@ -129,13 +141,125 @@ type Manifest struct {
 	// derives the required experience set from a capability selection;
 	// the mapping is validated by doctor.
 	Capabilities []string `yaml:"capabilities,omitempty"`
-	// Components declares the desktop stack for type: desktop
-	// experiences. Values are "builtin" or a safe-token name.
+	// Components declares the graphical environment stack for
+	// type: environment experiences. Values are "builtin" or a
+	// safe-token name.
 	Components map[string]string `yaml:"components,omitempty"`
+	// Environment declares the environment data contract (ADR-0015):
+	// which templates render to which user-side paths and what doctor
+	// validates. Mechanics live in the Environment Engine; every
+	// environment-specific fact is this data. Empty means no
+	// provisioning or validation is declared.
+	Environment *EnvSpec `yaml:"environment,omitempty"`
+}
+
+// EnvFile is one environment-managed config file: a template under
+// the RPM-owned template directory rendered to a user-side path.
+type EnvFile struct {
+	// Src is the template file name under the environment's RPM-owned
+	// template directory.
+	Src string `yaml:"src"`
+	// Dest is the destination path relative to the user config dir
+	// (XDG_CONFIG_HOME or ~/.config), e.g. "compositor/config.kdl".
+	// Config destinations are user-owned first-touch (never
+	// overwritten); managed destinations are Veilbox-owned and always
+	// regenerated.
+	Dest string `yaml:"dest"`
+}
+
+// EnvValidate declares the doctor validation expectations of an
+// environment (ADR-0015 validation hooks: file expectations and
+// command hooks).
+type EnvValidate struct {
+	// Files are config paths (relative to the user config dir) that
+	// must exist when the environment is installed.
+	Files []string `yaml:"files,omitempty"`
+	// Commands are safe-token argv lists run to validate the
+	// environment's own config (e.g. "shell config validate").
+	Commands [][]string `yaml:"commands,omitempty"`
+}
+
+// EnvSpec is the environment data contract (ADR-0015).
+type EnvSpec struct {
+	// Config lists first-touch user config files: rendered from
+	// templates, never overwriting existing user files.
+	Config []EnvFile `yaml:"config,omitempty"`
+	// Managed lists Veilbox-owned files under
+	// <config>/veilbox/environment/<name>/ that are always
+	// regenerated.
+	Managed []EnvFile `yaml:"managed,omitempty"`
+	// Validate declares doctor validation expectations.
+	Validate EnvValidate `yaml:"validate,omitempty"`
+}
+
+// Validate checks the environment data contract.
+func (s *EnvSpec) validate(name string) error {
+	for _, f := range s.Config {
+		if err := validateEnvFile(name, "config", f); err != nil {
+			return err
+		}
+	}
+	for _, f := range s.Managed {
+		if err := validateEnvFile(name, "managed", f); err != nil {
+			return err
+		}
+	}
+	seen := make(map[string]bool, len(s.Validate.Files))
+	for _, p := range s.Validate.Files {
+		if err := validateConfigPath(p); err != nil {
+			return fmt.Errorf("experience %q: environment validate file %q: %v", name, p, err)
+		}
+		if seen[p] {
+			return fmt.Errorf("experience %q: duplicate validate file %q", name, p)
+		}
+		seen[p] = true
+	}
+	for _, cmd := range s.Validate.Commands {
+		if len(cmd) == 0 {
+			return fmt.Errorf("experience %q: empty validate command", name)
+		}
+		for _, tok := range cmd {
+			if !safetoken.Valid(tok) {
+				return fmt.Errorf("experience %q: validate command element %q uses invalid characters (safe tokens only)", name, tok)
+			}
+		}
+	}
+	return nil
+}
+
+func validateEnvFile(name, kind string, f EnvFile) error {
+	if f.Src == "" || f.Dest == "" {
+		return fmt.Errorf("experience %q: environment %s entry needs both src and dest", name, kind)
+	}
+	if !safetoken.Valid(f.Src) {
+		return fmt.Errorf("experience %q: environment %s src %q uses invalid characters (safe tokens only)", name, kind, f.Src)
+	}
+	if err := validateConfigPath(f.Dest); err != nil {
+		return fmt.Errorf("experience %q: environment %s dest %q: %v", name, kind, f.Dest, err)
+	}
+	return nil
+}
+
+// validateConfigPath checks a manifest-declared path is relative to
+// the user config dir and free of traversal.
+func validateConfigPath(p string) error {
+	if p == "" {
+		return fmt.Errorf("empty path")
+	}
+	if strings.HasPrefix(p, "/") || strings.HasPrefix(p, "~") {
+		return fmt.Errorf("must be relative to the user config dir")
+	}
+	if strings.Contains(p, "..") {
+		return fmt.Errorf("must not contain path traversal")
+	}
+	if !safetoken.Valid(p) {
+		return fmt.Errorf("uses invalid characters (safe tokens only)")
+	}
+	return nil
 }
 
 // Validate checks manifest constraints, including the declarative
-// grammar of desktop components.
+// grammar of environment components.
 func (m Manifest) Validate() error {
 	if m.Domain != "" && !safetoken.ValidCommand(m.Domain) {
 		return fmt.Errorf("experience %q: domain %q uses invalid characters (presentation text, safe tokens only)", m.Name, m.Domain)
@@ -143,22 +267,22 @@ func (m Manifest) Validate() error {
 	switch m.Type {
 	case "", TypeTooling:
 		if len(m.Components) > 0 {
-			return fmt.Errorf("experience %q: components are only valid for type: desktop", m.Name)
+			return fmt.Errorf("experience %q: components are only valid for type: environment", m.Name)
 		}
 		return m.validateCapabilities()
-	case TypeDesktop:
+	case TypeEnvironment, TypeDesktop:
 	default:
-		return fmt.Errorf("experience %q: unknown type %q (want %q or %q)", m.Name, m.Type, TypeTooling, TypeDesktop)
+		return fmt.Errorf("experience %q: unknown type %q (want %q, %q or %q)", m.Name, m.Type, TypeTooling, TypeEnvironment, TypeDesktop)
 	}
 	if m.RPM == "" {
-		return fmt.Errorf("experience %q: a desktop experience must declare an installable rpm", m.Name)
+		return fmt.Errorf("experience %q: an environment experience must declare an installable rpm", m.Name)
 	}
 	if len(m.Components) == 0 {
-		return fmt.Errorf("experience %q: a desktop experience must declare components", m.Name)
+		return fmt.Errorf("experience %q: an environment experience must declare components", m.Name)
 	}
-	for _, key := range desktopRequiredComponents {
+	for _, key := range environmentRequiredComponents {
 		if m.Components[key] == "" {
-			return fmt.Errorf("experience %q: desktop component %q is required", m.Name, key)
+			return fmt.Errorf("experience %q: environment component %q is required", m.Name, key)
 		}
 	}
 	for key, val := range m.Components {
@@ -170,6 +294,11 @@ func (m Manifest) Validate() error {
 		}
 		if val == "builtin" && !builtinAllowed(key) {
 			return fmt.Errorf("experience %q: component %q must name a package (builtin is not valid here)", m.Name, key)
+		}
+	}
+	if m.Environment != nil {
+		if err := m.Environment.validate(m.Name); err != nil {
+			return err
 		}
 	}
 	return m.validateCapabilities()
@@ -233,10 +362,27 @@ func (c *Catalog) Load(name string) (Manifest, error) {
 	if m.Name != name {
 		return Manifest{}, fmt.Errorf("experience %s declares name %q", name, m.Name)
 	}
+	m.normalize()
 	if err := m.Validate(); err != nil {
 		return Manifest{}, err
 	}
 	return m, nil
+}
+
+// normalize migrates legacy manifest spellings to the current schema
+// (ADR-0012): the type name "desktop" becomes "environment" and the
+// component slot "shell" becomes "desktop_shell". The loader is the
+// single migration point; manifests never sit on a forked path.
+func (m *Manifest) normalize() {
+	if m.Type == TypeDesktop {
+		m.Type = TypeEnvironment
+	}
+	if v, ok := m.Components[legacyCompShell]; ok {
+		if _, exists := m.Components[CompDesktopShell]; !exists {
+			m.Components[CompDesktopShell] = v
+		}
+		delete(m.Components, legacyCompShell)
+	}
 }
 
 // List returns catalog entries with resolved status.

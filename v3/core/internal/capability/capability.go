@@ -210,8 +210,8 @@ func (r *Resolver) Base() (Manifest, error) {
 // names that implement any of the selected capabilities. Planned
 // experiences (no package yet) are included: their status is reported
 // downstream (plan diff, UI), and apply refuses them via validation.
-// Desktop experiences are never derived here: the environment axis is
-// chosen separately (ADR-0012).
+// Environment experiences are never derived here: the environment axis
+// is chosen separately (ADR-0012).
 func (r *Resolver) ExperiencesFor(caps []string) ([]string, error) {
 	if _, err := r.Validate(caps); err != nil {
 		return nil, err
@@ -220,7 +220,7 @@ func (r *Resolver) ExperiencesFor(caps []string) ([]string, error) {
 	var out []string
 	for _, c := range caps {
 		for _, e := range r.byCap[c] {
-			if e.Type == experience.TypeDesktop {
+			if e.Type == experience.TypeEnvironment {
 				continue
 			}
 			if !seen[e.Name] {
@@ -303,7 +303,7 @@ func (r *Resolver) CheckMapping() (planned []string, unknownRefs []string) {
 	for _, c := range caps {
 		hasInstallable := false
 		for _, e := range r.byCap[c] {
-			if e.Type != experience.TypeDesktop && e.RPM != "" {
+			if e.Type != experience.TypeEnvironment && e.RPM != "" {
 				hasInstallable = true
 				break
 			}

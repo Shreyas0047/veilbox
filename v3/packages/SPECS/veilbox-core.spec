@@ -7,7 +7,7 @@
 
 Name:           veilbox-core
 Version:        %{go_version}
-Release:        8%{?dist}
+Release:        9%{?dist}
 Summary:        Veilbox Core — Operations Platform for engineers
 
 License:        GPL-2.0-only
@@ -26,13 +26,15 @@ Veilbox Core provides the veil CLI:
   - veil profile / list / show / apply / diff / sync — engineer intent
   - veil capability list / info — intent concepts (ADR-0011)
   - veil experience list / info / install / remove — capability modules
-  - veil desktop list / info / install / remove / provision — complete
-    desktop experiences (compositor + shell + defaults, not bare
-    compositors); package install and desktop activation are separate
-    responsibilities — only 'veil desktop install' enables the display
-    manager and switches the boot target
+  - veil environment list / info / install / remove / provision —
+    complete environment experiences (compositor + shell + defaults,
+    not bare compositors); package install and environment activation
+    are separate responsibilities — only 'veil environment install'
+    enables the display manager and switches the boot target
+    ('veil desktop' is accepted as an alias for one release)
   - veil workspace / plan / apply / status / reset — user workspace
-  - veil onboard — the wizard: role, desktop, capabilities, workspace
+  - veil onboard — the wizard: role, environment, capabilities,
+    workspace
   - veil status — Veilbox and system state (profile sync included)
   - veil doctor — system, profile, and package consistency checks
 
@@ -43,9 +45,9 @@ Profiles are intent and state, never RPMs. Experiences are delivered
 as RPM meta-packages installed through DNF. Workspace configuration is
 generated under ~/.config/veilbox/workspace and integrated into user
 shell files through a single marked include block; Veilbox never
-rewrites user-owned files wholesale (see ADR-0005). Desktop
+rewrites user-owned files wholesale (see ADR-0005). Environment
 configuration follows the same rule: RPM-owned templates under
-/usr/share/veilbox/desktop/, first-touch user config that is never
+/usr/share/veilbox/environment/, first-touch user config that is never
 overwritten, and Veilbox-owned include files that are regenerated
 (see ADR-0007).
 
@@ -85,6 +87,19 @@ done
 %{_datadir}/veilbox/capabilities/*.yaml
 
 %changelog
+* Sat Aug 08 2026 Veilbox v3 — 0.1.0-9
+- Environment engine (ADR-0012): the desktop engine is generalized to
+  an environment engine — internal packages, commands, and data paths
+  move from 'desktop' to 'environment'; 'veil desktop' remains
+  accepted as an alias for one release (byte-identical output).
+  Applied-product composition record (ADR-0010): veil onboard --yes
+  and the wizard write an atomic composition.json under
+  ~/.config/veilbox/; veil status reports the composition, environment
+  line, and composition drift; veil doctor verifies the record against
+  live catalogs and the RPM database. Environment data contract
+  (ADR-0015): the Niri experience manifest declares config, managed,
+  and validation hooks that the engine consumes — no Niri-specific
+  code paths remain in the engine or CLI.
 * Sat Aug 08 2026 Veilbox v3 — 0.1.0-8
 - Capability layer (ADR-0011): capability manifests ship under
   /usr/share/veilbox/capabilities/, profiles recommend capabilities

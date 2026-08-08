@@ -6,19 +6,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Shreyas0047/veilbox/v3/core/internal/desktop"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/environment"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 )
 
 const cliNiriDesktopYAML = `name: niri-desktop
 display_name: Niri Experience
-type: desktop
-description: Complete Niri + Noctalia desktop experience.
+type: environment
+description: Complete Niri + Noctalia desktop environment.
 rpm: veilbox-experience-niri
 components:
   compositor: niri
-  shell: noctalia
+  desktop_shell: noctalia
   terminal: kitty
   launcher: builtin
   notifications: builtin
@@ -28,6 +28,15 @@ components:
   clipboard: builtin
   screenshot: builtin
   display_manager: sddm
+environment:
+  config:
+    - src: niri.config.kdl
+      dest: niri/config.kdl
+    - src: noctalia.config.toml
+      dest: noctalia/config.toml
+  managed:
+    - src: noctalia-veilbox.toml
+      dest: noctalia-veilbox.toml
 packages:
   - niri
   - noctalia
@@ -42,10 +51,10 @@ binds {
 }
 `
 
-// setupDesktopCLI wires a desktop engine over an isolated root:
-// VEILBOX_ROOT, HOME, XDG_CONFIG_HOME, templates, session dir, and a
-// fake system facade. Returns deps plus the fake runner.
-func setupDesktopCLI(t *testing.T) (deps, *fakeCLIRunner) {
+// setupEnvironmentCLI wires an environment engine over an isolated
+// root: VEILBOX_ROOT, HOME, XDG_CONFIG_HOME, templates, session dir,
+// and a fake system facade. Returns deps plus the fake runner.
+func setupEnvironmentCLI(t *testing.T) (deps, *fakeCLIRunner) {
 	t.Helper()
 	root := t.TempDir()
 	t.Setenv("VEILBOX_ROOT", root)
@@ -72,13 +81,13 @@ func setupDesktopCLI(t *testing.T) (deps, *fakeCLIRunner) {
 	os.WriteFile(filepath.Join(catDir, "networking-tools.yaml"),
 		[]byte("name: networking-tools\ndescription: Networking diagnostics.\nrpm: veilbox-experience-networking-tools\npackages:\n  - bind-utils\n"), 0o644)
 
-	tmplDir := filepath.Join(root, "desktop", "niri")
+	tmplDir := filepath.Join(root, "environment", "niri")
 	os.MkdirAll(tmplDir, 0o755)
 	os.WriteFile(filepath.Join(tmplDir, "niri.config.kdl"), []byte(cliNiriTemplate), 0o644)
 	os.WriteFile(filepath.Join(tmplDir, "noctalia.config.toml"),
-		[]byte("[include]\nfiles = [\"~/.config/veilbox/desktop/{{.Name}}/noctalia-veilbox.toml\"]\n"), 0o644)
+		[]byte("[include]\nfiles = [\"~/.config/veilbox/environment/{{.Name}}/noctalia-veilbox.toml\"]\n"), 0o644)
 	os.WriteFile(filepath.Join(tmplDir, "noctalia-veilbox.toml"),
-		[]byte("[wallpaper.default]\npath = \"/usr/share/veilbox/desktop/{{.Name}}/wallpaper.png\"\n"), 0o644)
+		[]byte("[wallpaper.default]\npath = \"/usr/share/veilbox/environment/{{.Name}}/wallpaper.png\"\n"), 0o644)
 
 	f := &fakeCLIRunner{responses: map[string]string{}, errByCmd: map[string]error{}}
 	dnf := dnfops.NewWithRunner(f)
@@ -87,8 +96,8 @@ func setupDesktopCLI(t *testing.T) (deps, *fakeCLIRunner) {
 			return experience.NewCatalogWith(catDir, dnf)
 		},
 		newDNF: func() *dnfops.System { return dnf },
-		newDesktop: func(c *experience.Catalog) *desktop.Engine {
-			return desktop.NewWith(c, desktop.NewSystemWith(f))
+		newEnvironment: func(c *experience.Catalog) *environment.Engine {
+			return environment.NewWith(c, environment.NewSystemWith(f))
 		},
 	}
 	return d, f
@@ -99,10 +108,10 @@ func (f *fakeCLIRunner) installed(pkg string) {
 	f.responses[f.key("rpm", "-q", pkg)] = pkg + "-0.1.0-1.fc44.noarch"
 }
 
-func TestDesktopListShowsDesktop(t *testing.T) {
-	d, f := setupDesktopCLI(t)
+func TestEnvironmentListShowsEnvironment(t *testing.T) {
+	d, f := setupEnvironmentCLI(t)
 	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
-	r := runCLI(t, d, "desktop", "list")
+	r := runCLI(t, d, "environment", "list")
 	if r.code != 0 {
 		t.Fatalf("code=%d err=%q", r.code, r.stderr)
 	}
@@ -112,51 +121,64 @@ func TestDesktopListShowsDesktop(t *testing.T) {
 		}
 	}
 	if strings.Contains(r.stdout, "networking-tools") {
-		t.Fatalf("tooling experience leaked into desktop list:\n%s", r.stdout)
+		t.Fatalf("tooling experience leaked into environment list:\n%s", r.stdout)
 	}
 }
 
-func TestDesktopOverviewSessionFromTTY(t *testing.T) {
-	d, f := setupDesktopCLI(t)
+func TestDesktopAliasMatchesEnvironment(t *testing.T) {
+	d, f := setupEnvironmentCLI(t)
 	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
-	r := runCLI(t, d, "desktop")
+	canonical := runCLI(t, d, "environment", "list")
+	alias := runCLI(t, d, "desktop", "list")
+	if canonical.code != 0 || alias.code != 0 {
+		t.Fatalf("codes: canonical=%d alias=%d", canonical.code, alias.code)
+	}
+	if canonical.stdout != alias.stdout {
+		t.Fatalf("alias output differs:\ncanonical:\n%s\nalias:\n%s", canonical.stdout, alias.stdout)
+	}
+}
+
+func TestEnvironmentOverviewSessionFromTTY(t *testing.T) {
+	d, f := setupEnvironmentCLI(t)
+	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
+	r := runCLI(t, d, "environment")
 	if r.code != 0 {
 		t.Fatalf("code=%d err=%q", r.code, r.stderr)
 	}
-	if !strings.Contains(r.stdout, "no graphical Veilbox desktop session detected") {
+	if !strings.Contains(r.stdout, "no graphical Veilbox environment session detected") {
 		t.Fatalf("must not guess session state:\n%s", r.stdout)
 	}
 }
 
-func TestDesktopInfo(t *testing.T) {
-	d, f := setupDesktopCLI(t)
+func TestEnvironmentInfo(t *testing.T) {
+	d, f := setupEnvironmentCLI(t)
 	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
-	r := runCLI(t, d, "desktop", "info", "niri-desktop")
+	r := runCLI(t, d, "environment", "info", "niri-desktop")
 	if r.code != 0 {
 		t.Fatalf("code=%d err=%q", r.code, r.stderr)
 	}
-	for _, want := range []string{"compositor", "niri", "shell", "noctalia", "display_manager", "sddm", "provided by shell"} {
+	for _, want := range []string{"compositor", "niri", "desktop_shell", "noctalia", "display_manager", "sddm", "provided by shell"} {
 		if !strings.Contains(r.stdout, want) {
 			t.Fatalf("missing %q in:\n%s", want, r.stdout)
 		}
 	}
 }
 
-func TestDesktopInfoUnknown(t *testing.T) {
-	d, _ := setupDesktopCLI(t)
-	r := runCLI(t, d, "desktop", "info", "nope")
+func TestEnvironmentInfoUnknown(t *testing.T) {
+	d, _ := setupEnvironmentCLI(t)
+	r := runCLI(t, d, "environment", "info", "nope")
 	if r.code != 1 {
 		t.Fatalf("code=%d", r.code)
 	}
 }
 
-func TestDesktopInstallActivates(t *testing.T) {
-	d, f := setupDesktopCLI(t)
+func TestEnvironmentInstallActivates(t *testing.T) {
+	d, f := setupEnvironmentCLI(t)
 	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = "veilbox-experience-niri\n"
 	f.notInstalled("veilbox-experience-niri")
 	f.responses[f.key("systemctl", "get-default")] = "multi-user.target"
 
-	r := runCLI(t, d, "desktop", "install", "niri-desktop")
+	r := runCLI(t, d, "environment", "install", "niri-desktop")
 	if r.code != 0 {
 		t.Fatalf("code=%d err=%q", r.code, r.stderr)
 	}
@@ -186,7 +208,7 @@ func TestDesktopInstallActivates(t *testing.T) {
 	for _, p := range []string{
 		filepath.Join(cfg, "niri", "config.kdl"),
 		filepath.Join(cfg, "noctalia", "config.toml"),
-		filepath.Join(cfg, "veilbox", "desktop", "niri-desktop", "noctalia-veilbox.toml"),
+		filepath.Join(cfg, "veilbox", "environment", "niri-desktop", "noctalia-veilbox.toml"),
 	} {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("expected %s: %v", p, err)
@@ -194,8 +216,8 @@ func TestDesktopInstallActivates(t *testing.T) {
 	}
 }
 
-func TestDesktopInstallPreservesUserConfig(t *testing.T) {
-	d, f := setupDesktopCLI(t)
+func TestEnvironmentInstallPreservesUserConfig(t *testing.T) {
+	d, f := setupEnvironmentCLI(t)
 	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = "veilbox-experience-niri\n"
 	f.notInstalled("veilbox-experience-niri")
 	f.responses[f.key("systemctl", "get-default")] = "multi-user.target"
@@ -205,7 +227,7 @@ func TestDesktopInstallPreservesUserConfig(t *testing.T) {
 	userConfig := filepath.Join(cfg, "niri", "config.kdl")
 	os.WriteFile(userConfig, []byte("my precious config\n"), 0o644)
 
-	r := runCLI(t, d, "desktop", "install", "niri-desktop")
+	r := runCLI(t, d, "environment", "install", "niri-desktop")
 	if r.code != 0 {
 		t.Fatalf("code=%d err=%q", r.code, r.stderr)
 	}
@@ -218,15 +240,15 @@ func TestDesktopInstallPreservesUserConfig(t *testing.T) {
 	}
 }
 
-func TestDesktopRemoveIsConservative(t *testing.T) {
-	d, f := setupDesktopCLI(t)
+func TestEnvironmentRemoveIsConservative(t *testing.T) {
+	d, f := setupEnvironmentCLI(t)
 	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = "veilbox-experience-niri\n"
 	f.installed("veilbox-experience-niri")
 	cfg := os.Getenv("XDG_CONFIG_HOME")
 	os.MkdirAll(filepath.Join(cfg, "niri"), 0o755)
 	os.WriteFile(filepath.Join(cfg, "niri", "config.kdl"), []byte("user config\n"), 0o644)
 
-	r := runCLI(t, d, "desktop", "remove", "niri-desktop")
+	r := runCLI(t, d, "environment", "remove", "niri-desktop")
 	if r.code != 0 {
 		t.Fatalf("code=%d err=%q", r.code, r.stderr)
 	}
@@ -244,10 +266,10 @@ func TestDesktopRemoveIsConservative(t *testing.T) {
 	}
 }
 
-func TestDesktopProvisionRegenerates(t *testing.T) {
-	d, f := setupDesktopCLI(t)
+func TestEnvironmentProvisionRegenerates(t *testing.T) {
+	d, f := setupEnvironmentCLI(t)
 	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = "veilbox-experience-niri\n"
-	r := runCLI(t, d, "desktop", "provision", "niri-desktop")
+	r := runCLI(t, d, "environment", "provision", "niri-desktop")
 	if r.code != 0 {
 		t.Fatalf("code=%d err=%q", r.code, r.stderr)
 	}
@@ -258,10 +280,10 @@ func TestDesktopProvisionRegenerates(t *testing.T) {
 	}
 }
 
-func TestDesktopProvisionNotInstalled(t *testing.T) {
-	d, f := setupDesktopCLI(t)
+func TestEnvironmentProvisionNotInstalled(t *testing.T) {
+	d, f := setupEnvironmentCLI(t)
 	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
-	r := runCLI(t, d, "desktop", "provision", "niri-desktop")
+	r := runCLI(t, d, "environment", "provision", "niri-desktop")
 	if r.code != 1 {
 		t.Fatalf("code=%d", r.code)
 	}
@@ -270,21 +292,21 @@ func TestDesktopProvisionNotInstalled(t *testing.T) {
 	}
 }
 
-func TestDesktopUnknownCommand(t *testing.T) {
-	d, _ := setupDesktopCLI(t)
-	if r := runCLI(t, d, "desktop", "frobnicate"); r.code != 2 {
+func TestEnvironmentUnknownCommand(t *testing.T) {
+	d, _ := setupEnvironmentCLI(t)
+	if r := runCLI(t, d, "environment", "frobnicate"); r.code != 2 {
 		t.Fatalf("code=%d", r.code)
 	}
 }
 
-func TestDesktopInstallRejectsToolingExperience(t *testing.T) {
-	d, f := setupDesktopCLI(t)
+func TestEnvironmentInstallRejectsToolingExperience(t *testing.T) {
+	d, f := setupEnvironmentCLI(t)
 	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
-	r := runCLI(t, d, "desktop", "install", "networking-tools")
+	r := runCLI(t, d, "environment", "install", "networking-tools")
 	if r.code != 1 {
 		t.Fatalf("code=%d err=%q", r.code, r.stderr)
 	}
-	if !strings.Contains(r.stderr, "not a desktop experience") {
+	if !strings.Contains(r.stderr, "not an environment experience") {
 		t.Fatalf("stderr=%q", r.stderr)
 	}
 }

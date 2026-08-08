@@ -6,7 +6,7 @@ import (
 	"sort"
 
 	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
-	"github.com/Shreyas0047/veilbox/v3/core/internal/desktop"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/environment"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/profile"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/settings"
@@ -21,9 +21,9 @@ const (
 	ActionInstalled = "installed"
 	ActionNone      = "none"
 
-	DesktopInstallActivate = "install-activate"
-	DesktopActivateOnly    = "activate-only"
-	DesktopAlreadyActive   = "already-active"
+	EnvironmentInstallActivate = "install-activate"
+	EnvironmentActivateOnly    = "activate-only"
+	EnvironmentAlreadyActive   = "already-active"
 )
 
 // ProfileAction describes what applying the selected profile would do.
@@ -42,12 +42,12 @@ type ExperienceItem struct {
 	Action      string
 }
 
-// DesktopAction describes what the plan would do for the desktop.
-type DesktopAction struct {
+// EnvironmentAction describes what the plan would do for the environment.
+type EnvironmentAction struct {
 	Name        string
 	DisplayName string
 	Action      string
-	// Steps lists concrete activation steps when the desktop will be
+	// Steps lists concrete activation steps when the environment will be
 	// installed or activated (session, display manager, boot target).
 	Steps []string
 }
@@ -63,7 +63,7 @@ type WorkspaceAction struct {
 type Plan struct {
 	Profile     ProfileAction
 	Experiences []ExperienceItem
-	Desktop     DesktopAction
+	Environment EnvironmentAction
 	Workspace   WorkspaceAction
 	// Problems are invalid references or values in the selection;
 	// apply refuses to run while any exist.
@@ -81,7 +81,7 @@ func (p Plan) HasChanges() bool {
 	if p.Workspace.Action != ActionUnchanged {
 		return true
 	}
-	if p.Desktop.Action != ActionNone && p.Desktop.Action != DesktopAlreadyActive {
+	if p.Environment.Action != ActionNone && p.Environment.Action != EnvironmentAlreadyActive {
 		return true
 	}
 	for _, e := range p.Experiences {
@@ -113,17 +113,17 @@ func (p Plan) SystemActions() []string {
 	if p.Workspace.Action == ActionApply {
 		out = append(out, "apply workspace preferences")
 	}
-	switch p.Desktop.Action {
-	case DesktopInstallActivate:
-		out = append(out, fmt.Sprintf("install %s", display(p.Desktop.DisplayName, p.Desktop.Name)))
-		out = append(out, p.Desktop.Steps...)
-	case DesktopActivateOnly:
-		out = append(out, fmt.Sprintf("activate %s", display(p.Desktop.DisplayName, p.Desktop.Name)))
-		out = append(out, p.Desktop.Steps...)
-	case DesktopAlreadyActive:
-		out = append(out, fmt.Sprintf("%s already active", display(p.Desktop.DisplayName, p.Desktop.Name)))
+	switch p.Environment.Action {
+	case EnvironmentInstallActivate:
+		out = append(out, fmt.Sprintf("install %s", display(p.Environment.DisplayName, p.Environment.Name)))
+		out = append(out, p.Environment.Steps...)
+	case EnvironmentActivateOnly:
+		out = append(out, fmt.Sprintf("activate %s", display(p.Environment.DisplayName, p.Environment.Name)))
+		out = append(out, p.Environment.Steps...)
+	case EnvironmentAlreadyActive:
+		out = append(out, fmt.Sprintf("%s already active", display(p.Environment.DisplayName, p.Environment.Name)))
 	case ActionNone:
-		out = append(out, "no desktop selected")
+		out = append(out, "no environment selected")
 	}
 	if len(out) == 0 {
 		out = append(out, "nothing to do — selection matches the machine")
@@ -138,7 +138,7 @@ type PlanInputs struct {
 	Catalog      *experience.Catalog
 	Capabilities *capability.Registry
 	Workspace    *workspace.Engine
-	Desktop      *desktop.Engine
+	Environment  *environment.Engine
 }
 
 // Resolver returns the capability→experience mapping resolver over
@@ -156,7 +156,7 @@ func (in PlanInputs) Resolver() *capability.Resolver {
 func BuildPlan(sel Selection, in PlanInputs) (*Plan, error) {
 	plan := &Plan{
 		Experiences: []ExperienceItem{},
-		Desktop:     DesktopAction{Action: ActionNone},
+		Environment: EnvironmentAction{Action: ActionNone},
 	}
 	plan.Problems = append(plan.Problems, sel.Problems(in.Registry, in.Capabilities, in.Catalog)...)
 
@@ -191,7 +191,7 @@ func BuildPlan(sel Selection, in PlanInputs) (*Plan, error) {
 	sort.Strings(names)
 	for _, name := range names {
 		en, ok := entryBy[name]
-		if !ok || en.Type == experience.TypeDesktop || en.RPM == "" {
+		if !ok || en.Type == experience.TypeEnvironment || en.RPM == "" {
 			continue // already reported as a problem
 		}
 		item := ExperienceItem{
@@ -207,26 +207,26 @@ func BuildPlan(sel Selection, in PlanInputs) (*Plan, error) {
 		plan.Experiences = append(plan.Experiences, item)
 	}
 
-	// Desktop.
-	if sel.Desktop != "" {
-		en, ok := entryBy[sel.Desktop]
-		if ok && en.Type == experience.TypeDesktop && en.RPM != "" {
-			ip, perr := in.Desktop.PlanInstall(sel.Desktop)
+	// Environment.
+	if sel.Environment != "" {
+		en, ok := entryBy[sel.Environment]
+		if ok && en.Type == experience.TypeEnvironment && en.RPM != "" {
+			ip, perr := in.Environment.PlanInstall(sel.Environment)
 			if perr != nil {
-				plan.Problems = append(plan.Problems, fmt.Sprintf("desktop %q: %v", sel.Desktop, perr))
+				plan.Problems = append(plan.Problems, fmt.Sprintf("environment %q: %v", sel.Environment, perr))
 			} else {
-				plan.Desktop = DesktopAction{
+				plan.Environment = EnvironmentAction{
 					Name:        en.Name,
 					DisplayName: display(en.DisplayName, en.Name),
-					Action:      DesktopInstallActivate,
-					Steps:       desktopSteps(ip),
+					Action:      EnvironmentInstallActivate,
+					Steps:       environmentSteps(ip),
 				}
 				if en.Status == experience.StatusInstalled {
 					switch {
 					case ip.WillEnableDM || ip.WillSetTarget || !ip.SessionRegistered:
-						plan.Desktop.Action = DesktopActivateOnly
+						plan.Environment.Action = EnvironmentActivateOnly
 					default:
-						plan.Desktop.Action = DesktopAlreadyActive
+						plan.Environment.Action = EnvironmentAlreadyActive
 					}
 				}
 			}
@@ -251,7 +251,7 @@ func BuildPlan(sel Selection, in PlanInputs) (*Plan, error) {
 	return plan, nil
 }
 
-func desktopSteps(ip *desktop.InstallPlan) []string {
+func environmentSteps(ip *environment.InstallPlan) []string {
 	var steps []string
 	if !ip.SessionRegistered {
 		steps = append(steps, "register Wayland session")
@@ -281,8 +281,8 @@ func display(d, fallback string) string {
 	return fallback
 }
 
-// RenderPlan writes the plan in the review format: PROFILE / DESKTOP /
-// EXPERIENCES / WORKSPACE / SYSTEM ACTIONS.
+// RenderPlan writes the plan in the review format: PROFILE /
+// ENVIRONMENT / EXPERIENCES / WORKSPACE / SYSTEM ACTIONS.
 func RenderPlan(w io.Writer, p Plan, sel Selection) {
 	fmt.Fprintln(w, "PROFILE")
 	if p.Profile.Name != "" {
@@ -294,16 +294,16 @@ func RenderPlan(w io.Writer, p Plan, sel Selection) {
 		fmt.Fprintln(w, "  (none)")
 	}
 
-	fmt.Fprintln(w, "DESKTOP")
-	switch p.Desktop.Action {
+	fmt.Fprintln(w, "ENVIRONMENT")
+	switch p.Environment.Action {
 	case ActionNone:
 		fmt.Fprintln(w, "  (none)")
 	default:
-		fmt.Fprintf(w, "  %s\n", display(p.Desktop.DisplayName, p.Desktop.Name))
-		switch p.Desktop.Action {
-		case DesktopAlreadyActive:
+		fmt.Fprintf(w, "  %s\n", display(p.Environment.DisplayName, p.Environment.Name))
+		switch p.Environment.Action {
+		case EnvironmentAlreadyActive:
 			fmt.Fprintln(w, "  (already installed and active)")
-		case DesktopActivateOnly:
+		case EnvironmentActivateOnly:
 			fmt.Fprintln(w, "  (installed; activation pending)")
 		default:
 			fmt.Fprintln(w, "  (will be installed and activated)")

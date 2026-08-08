@@ -1,5 +1,5 @@
 // {{.DisplayName}} — Veilbox-generated Niri configuration.
-// Created by 'veil desktop install {{.Name}}' on first touch.
+// Created by 'veil environment install {{.Name}}' on first touch.
 // You own this file afterwards — edit it freely.
 
 input {

@@ -43,10 +43,10 @@ func (m welcomeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m welcomeModel) View() string {
 	var b strings.Builder
 	b.WriteString("VEILBOX ONBOARDING\n\n")
-	b.WriteString("This wizard configures your engineer role, desktop,\n")
+	b.WriteString("This wizard configures your engineer role, environment,\n")
 	b.WriteString("capabilities and workspace preferences.\n\n")
 	b.WriteString("Nothing on this machine changes until you confirm the\n")
-	b.WriteString("plan on the review screen — and desktop activation is\n")
+	b.WriteString("plan on the review screen — and environment activation is\n")
 	b.WriteString("a separate explicit confirmation.\n\n")
 	b.WriteString("Press Enter to begin.  [q] quits.")
 	return b.String()
@@ -60,7 +60,7 @@ type pickItem struct {
 	current bool
 }
 
-// pickModel is a single-choice list (role, desktop). Enter confirms;
+// pickModel is a single-choice list (role, environment). Enter confirms;
 // the previously chosen value is marked and pre-cursorred.
 type pickModel struct {
 	chrome
@@ -611,14 +611,14 @@ func (m wsModel) View() string {
 }
 
 // reviewModel is the review screen: the complete plan (scrollable),
-// the desktop-activation confirmation and the Apply / Restart /
+// the environment-activation confirmation and the Apply / Restart /
 // Abort actions.
 type reviewModel struct {
 	chrome
-	info       onboarding.ReviewInfo
-	hasDesktop bool
-	activate   bool
-	action     int // 0 apply, 1 restart, 2 abort
+	info           onboarding.ReviewInfo
+	hasEnvironment bool
+	activate       bool
+	action         int // 0 apply, 1 restart, 2 abort
 	scroll
 	height   int
 	decision onboarding.ReviewDecision
@@ -632,9 +632,9 @@ func newReviewModel(step int, info onboarding.ReviewInfo) reviewModel {
 			title: "Review",
 			help:  "↑/↓ scroll · ←/→ action · a activation · enter confirm · b restart · q quit",
 		},
-		info:       info,
-		hasDesktop: info.Selection.Desktop != "",
-		activate:   info.Selection.Desktop != "",
+		info:           info,
+		hasEnvironment: info.Selection.Environment != "",
+		activate:       info.Selection.Environment != "",
 	}
 }
 
@@ -659,7 +659,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.move(1, len(m.planLines()), m.viewHeight())
 			return m, nil
 		case tea.KeyLeft:
-			if m.hasDesktop && m.action == 0 {
+			if m.hasEnvironment && m.action == 0 {
 				// The activation line sits before the actions.
 				m.action = -1
 			} else {
@@ -683,8 +683,8 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.action {
 			case 0:
 				m.decision = onboarding.ReviewDecision{
-					Apply:           true,
-					ActivateDesktop: m.activate,
+					Apply:               true,
+					ActivateEnvironment: m.activate,
 				}
 			case 1:
 				m.decision = onboarding.ReviewDecision{Restart: true}
@@ -705,7 +705,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.decision = onboarding.ReviewDecision{Restart: true}
 					return m, tea.Quit
 				case 'a', 'A':
-					if m.hasDesktop {
+					if m.hasEnvironment {
 						m.activate = !m.activate
 					}
 				case 'j':
@@ -748,16 +748,16 @@ func (m reviewModel) View() string {
 		b.WriteString(fmt.Sprintf("     · %d of %d ·\n", m.offset+1, len(lines)))
 	}
 	b.WriteString("\n")
-	if m.hasDesktop {
+	if m.hasEnvironment {
 		state := "yes"
 		if !m.activate {
 			state = "no"
 		}
 		b.WriteString("Activate ")
-		b.WriteString(m.info.Selection.Desktop)
+		b.WriteString(m.info.Selection.Environment)
 		b.WriteString(" now: ")
 		b.WriteString(state)
-		b.WriteString("  [a toggles — activation installs and enables the desktop]\n")
+		b.WriteString("  [a toggles — activation installs and enables the environment]\n")
 	}
 	names := []string{"Apply", "Restart", "Abort"}
 	for i, n := range names {

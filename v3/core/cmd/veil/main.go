@@ -19,11 +19,12 @@
 //	veil experience info <name>
 //	veil experience install <name>
 //	veil experience remove <name>
-//	veil desktop list
-//	veil desktop info <name>
-//	veil desktop install <name>
-//	veil desktop remove <name>
-//	veil desktop provision <name>
+//	veil environment list
+//	veil environment info <name>
+//	veil environment install <name>
+//	veil environment remove <name>
+//	veil environment provision <name>
+//	veil desktop ... (alias, accepted for one release)
 //	veil workspace [plan|apply|status|reset]
 //	veil onboard [--yes]
 //	veil status
@@ -36,12 +37,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
-	"github.com/Shreyas0047/veilbox/v3/core/internal/desktop"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/environment"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/onboarding"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/profile"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/settings"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/workspace"
@@ -68,19 +71,20 @@ Commands:
   experience info <name>  Show details about an experience
   experience install <name>  Install an experience through DNF
   experience remove <name>   Remove an experience through DNF
-  desktop                 Show desktop overview and session state
-  desktop list            List desktop experiences and their status
-  desktop info <name>     Show a desktop experience's stack
-  desktop install <name>  Install + activate a desktop experience
-  desktop remove <name>   Remove a desktop experience (conservative)
-  desktop provision <name>  Regenerate Veilbox-owned desktop config
+  environment             Show environment overview and session state
+  environment list        List environment experiences and their status
+  environment info <name> Show an environment experience's stack
+  environment install <name>  Install + activate an environment experience
+  environment remove <name>   Remove an environment experience (conservative)
+  environment provision <name>  Regenerate Veilbox-owned environment config
+  desktop                 Alias for 'environment' (one release)
   workspace               Show the workspace overview
   workspace plan          Show what apply would do (no changes)
   workspace apply [--yes] [--force]
                           Apply the active profile's workspace
   workspace status        Report applied state, drift, conflicts
   workspace reset [--yes] Remove only Veilbox-managed workspace config
-  onboard [--yes]         Run the onboarding wizard (role, desktop,
+  onboard [--yes]         Run the onboarding wizard (role, environment,
                           capabilities, workspace) and apply the plan
   status                  Show current Veilbox and system state
   doctor                  Diagnose Veilbox and system health
@@ -98,7 +102,7 @@ func main() {
 type deps struct {
 	newCatalog      func() *experience.Catalog
 	newDNF          func() *dnfops.System
-	newDesktop      func(c *experience.Catalog) *desktop.Engine
+	newEnvironment  func(c *experience.Catalog) *environment.Engine
 	newCapabilities func() *capability.Registry
 }
 
@@ -123,11 +127,11 @@ func (d deps) dnf() *dnfops.System {
 	return dnfops.New()
 }
 
-func (d deps) desktopEngine() *desktop.Engine {
-	if d.newDesktop != nil {
-		return d.newDesktop(d.catalog())
+func (d deps) environmentEngine() *environment.Engine {
+	if d.newEnvironment != nil {
+		return d.newEnvironment(d.catalog())
 	}
-	return desktop.New(d.catalog())
+	return environment.New(d.catalog())
 }
 
 func run(args []string, stdout, stderr io.Writer, d deps) int {
@@ -148,8 +152,11 @@ func run(args []string, stdout, stderr io.Writer, d deps) int {
 		return cmdCapability(args[1:], stdout, stderr, d)
 	case "experience":
 		return cmdExperience(args[1:], stdout, stderr, d)
+	case "environment":
+		return cmdEnvironment(args[1:], stdout, stderr, d)
 	case "desktop":
-		return cmdDesktop(args[1:], stdout, stderr, d)
+		// Legacy alias (ADR-0012): accepted for one release.
+		return cmdEnvironment(args[1:], stdout, stderr, d)
 	case "workspace":
 		return cmdWorkspace(args[1:], stdout, stderr)
 	case "onboard":
@@ -618,6 +625,18 @@ func cmdStatus(stdout, stderr io.Writer, d deps) int {
 	coreRPM := installedCoreRPM(d)
 	fmt.Fprintf(stdout, "Core version:   %s\n", coreRPM)
 
+	// The composition is the applied product record (ADR-0010): the
+	// source of truth for what was agreed. Status reads it plus the
+	// RPM database; it never guesses.
+	comp, cerr := onboarding.LoadComposition()
+	if cerr != nil {
+		fmt.Fprintf(stdout, "Composition:    (unreadable: %v)\n", cerr)
+	} else if comp.SchemaVersion == 0 {
+		fmt.Fprintln(stdout, "Composition:    (none — run 'veil onboard --yes' to record the applied product)")
+	} else {
+		fmt.Fprintf(stdout, "Composition:    applied %s (schema %d)\n", comp.AppliedAt, comp.SchemaVersion)
+	}
+
 	st, err := profile.Active()
 	if err != nil {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
@@ -657,28 +676,67 @@ func cmdStatus(stdout, stderr io.Writer, d deps) int {
 	} else {
 		fmt.Fprintf(stdout, "Experiences:    %s\n", strings.Join(installed, ", "))
 	}
+	if comp.SchemaVersion > 0 {
+		entries, lerr := d.catalog().List()
+		var missing []string
+		if lerr == nil {
+			installedNames := make(map[string]bool)
+			for _, e := range entries {
+				if e.Status == experience.StatusInstalled {
+					installedNames[e.Name] = true
+				}
+			}
+			for _, name := range comp.Experiences {
+				if !installedNames[name] {
+					missing = append(missing, name)
+				}
+			}
+		}
+		if len(missing) > 0 {
+			fmt.Fprintf(stdout, "Composition drift: %s recorded but no longer installed\n", strings.Join(missing, ", "))
+		}
+	}
 
-	if desktops, derr := d.desktopEngine().List(); derr == nil {
-		var installedDesktops []string
-		activeCompositor := ""
-		for _, en := range desktops {
+	envs, derr := d.environmentEngine().List()
+	if derr != nil {
+		fmt.Fprintf(stderr, "veil: %v\n", derr)
+		return 1
+	}
+	statusBy := make(map[string]experience.Status, len(envs))
+	activeCompositor := ""
+	for _, en := range envs {
+		statusBy[en.Name] = en.Status
+		if en.Session.Compositor != "" {
+			activeCompositor = en.Session.Compositor
+		}
+	}
+	if comp.SchemaVersion > 0 && comp.Environment != nil {
+		rec := comp.Environment
+		switch statusBy[rec.Name] {
+		case experience.StatusInstalled:
+			fmt.Fprintf(stdout, "Environment:    %s (%s)\n", rec.Name, rec.RPM)
+		case experience.StatusAvailable:
+			fmt.Fprintf(stdout, "Environment:    %s — recorded but package %s not installed (drift)\n", rec.Name, rec.RPM)
+		default:
+			fmt.Fprintf(stdout, "Environment:    %s — recorded but unknown to the current catalog (drift)\n", rec.Name)
+		}
+	} else {
+		var installedEnvs []string
+		for _, en := range envs {
 			if en.Status == experience.StatusInstalled {
-				installedDesktops = append(installedDesktops, en.Name)
-			}
-			if en.Session.Compositor != "" {
-				activeCompositor = en.Session.Compositor
+				installedEnvs = append(installedEnvs, en.Name)
 			}
 		}
-		if len(installedDesktops) == 0 {
-			fmt.Fprintln(stdout, "Desktop:        (none installed)")
+		if len(installedEnvs) == 0 {
+			fmt.Fprintln(stdout, "Environment:    (none installed)")
 		} else {
-			fmt.Fprintf(stdout, "Desktop:        %s\n", strings.Join(installedDesktops, ", "))
-			if activeCompositor == "" {
-				fmt.Fprintf(stdout, "Session:        no graphical Veilbox desktop session detected\n")
-			} else {
-				fmt.Fprintf(stdout, "Session:        %s active\n", activeCompositor)
-			}
+			fmt.Fprintf(stdout, "Environment:    %s (no composition record)\n", strings.Join(installedEnvs, ", "))
 		}
+	}
+	if activeCompositor == "" {
+		fmt.Fprintln(stdout, "Session:        no graphical Veilbox environment session detected")
+	} else {
+		fmt.Fprintf(stdout, "Session:        %s active\n", activeCompositor)
 	}
 
 	rel := fedoraRelease()
@@ -824,6 +882,44 @@ func cmdDoctor(stdout, stderr io.Writer, d deps) int {
 			fmt.Sprintf("%d unknown capability reference(s)", len(missing)))
 	}
 
+	// The composition record (ADR-0010): what was applied, and whether
+	// it still holds against the live catalogs and RPM database.
+	comp, cerr := onboarding.LoadComposition()
+	check("Composition record parses", false, cerr == nil, "composition.json")
+	if cerr == nil && comp.SchemaVersion > 0 {
+		var drift []string
+		if comp.Profile != "" {
+			if _, lerr := reg.Load(comp.Profile); lerr != nil {
+				drift = append(drift, "profile "+comp.Profile+" unknown to the registry")
+			}
+		}
+		installedSet := make(map[string]bool)
+		for _, e := range entries {
+			if e.Status == experience.StatusInstalled {
+				installedSet[e.Name] = true
+			}
+		}
+		for _, name := range comp.Experiences {
+			if !installedSet[name] {
+				drift = append(drift, "experience "+name+" no longer installed")
+			}
+		}
+		if comp.Environment != nil {
+			ok, rerr := d.dnf().IsInstalled(comp.Environment.RPM)
+			switch {
+			case rerr != nil:
+				drift = append(drift, "environment "+comp.Environment.Name+": "+rerr.Error())
+			case !ok:
+				drift = append(drift, "environment "+comp.Environment.Name+" package not installed")
+			}
+		}
+		status := "consistent with live state"
+		if len(drift) > 0 {
+			status = "drift: " + strings.Join(drift, "; ")
+		}
+		check("Composition consistent with live state", false, len(drift) == 0, status)
+	}
+
 	// Repository reachability.
 	dnf := d.dnf()
 	repos, rerr := dnf.Repos()
@@ -867,30 +963,31 @@ func cmdDoctor(stdout, stderr io.Writer, d deps) int {
 		}
 	}
 
-	// Desktop health (warn-level: a desktop is optional functionality,
-	// and graphical runtime checks are skipped from a TTY session).
-	var desktopEntries []experience.Entry
+	// Environment health (warn-level: an environment is optional
+	// functionality, and graphical runtime checks are skipped from a
+	// TTY session).
+	var environmentEntries []experience.Entry
 	for _, en := range entries {
-		if en.Type == experience.TypeDesktop {
-			desktopEntries = append(desktopEntries, en)
+		if en.Type == experience.TypeEnvironment {
+			environmentEntries = append(environmentEntries, en)
 		}
 	}
-	if len(desktopEntries) > 0 {
+	if len(environmentEntries) > 0 {
 		invalid := 0
-		var installedDesktop *experience.Entry
-		for i := range desktopEntries {
-			if verr := desktopEntries[i].Manifest.Validate(); verr != nil {
+		var installedEnvironment *experience.Entry
+		for i := range environmentEntries {
+			if verr := environmentEntries[i].Manifest.Validate(); verr != nil {
 				invalid++
 			}
-			if desktopEntries[i].Status == experience.StatusInstalled && installedDesktop == nil {
-				installedDesktop = &desktopEntries[i]
+			if environmentEntries[i].Status == experience.StatusInstalled && installedEnvironment == nil {
+				installedEnvironment = &environmentEntries[i]
 			}
 		}
-		check("Desktop manifest valid", false, invalid == 0,
-			fmt.Sprintf("%d desktop experience(s)", len(desktopEntries)))
+		check("Environment manifest valid", false, invalid == 0,
+			fmt.Sprintf("%d environment experience(s)", len(environmentEntries)))
 
 		var missingPkgs []string
-		for _, en := range desktopEntries {
+		for _, en := range environmentEntries {
 			if en.Status != experience.StatusInstalled {
 				continue
 			}
@@ -904,40 +1001,63 @@ func cmdDoctor(stdout, stderr io.Writer, d deps) int {
 				}
 			}
 		}
-		check("Desktop packages installed", false, len(missingPkgs) == 0,
+		check("Environment packages installed", false, len(missingPkgs) == 0,
 			fmt.Sprintf("%d missing", len(missingPkgs)))
 
 		var missingSession []string
 		var templateErr []string
-		if installedDesktop != nil {
-			sf := "/usr/share/wayland-sessions/" +
-				installedDesktop.Components[experience.CompCompositor] + ".desktop"
+		if installedEnvironment != nil {
+			sf := filepath.Join(d.environmentEngine().SessionDir(),
+				installedEnvironment.Components[experience.CompCompositor]+".desktop")
 			if _, err := os.Stat(sf); err != nil {
 				missingSession = append(missingSession, sf)
 			}
-			td := d.desktopEngine().TemplateDir(installedDesktop.Manifest)
+			td := d.environmentEngine().TemplateDir(installedEnvironment.Manifest)
 			if _, err := os.Stat(td); err != nil {
 				templateErr = append(templateErr, err.Error())
 			}
 		}
-		check("Desktop session file present", false, len(missingSession) == 0,
+		check("Environment session file present", false, len(missingSession) == 0,
 			strings.Join(missingSession, ", "))
-		check("Desktop templates readable", false, len(templateErr) == 0,
+		check("Environment templates readable", false, len(templateErr) == 0,
 			strings.Join(templateErr, ", "))
 
-		if installedDesktop != nil &&
-			installedDesktop.Components[experience.CompShell] == "noctalia" &&
-			dnfops.Available("noctalia") {
-			_, verr := dnfops.ExecRunner{}.Run("noctalia", "config", "validate")
-			check("Desktop shell config valid", false, verr == nil,
-				"noctalia config validate")
+		// Validation hooks (ADR-0015): the environment declares what
+		// doctor checks, never the other way around.
+		var cfgFileErr []string
+		var hookErr []string
+		if installedEnvironment != nil && installedEnvironment.Manifest.Environment != nil {
+			cfg, cerr := environment.ConfigDir()
+			if cerr != nil {
+				cfgFileErr = append(cfgFileErr, cerr.Error())
+			} else {
+				for _, f := range installedEnvironment.Manifest.Environment.Validate.Files {
+					p := filepath.Join(cfg, f)
+					if _, err := os.Stat(p); err != nil {
+						cfgFileErr = append(cfgFileErr, p)
+					}
+				}
+			}
+			runner := dnfops.ExecRunner{}
+			for _, cmd := range installedEnvironment.Manifest.Environment.Validate.Commands {
+				if len(cmd) == 0 {
+					continue
+				}
+				if _, err := runner.Run(cmd[0], cmd[1:]...); err != nil {
+					hookErr = append(hookErr, strings.Join(cmd, " "))
+				}
+			}
 		}
+		check("Environment config files present", false, len(cfgFileErr) == 0,
+			strings.Join(cfgFileErr, ", "))
+		check("Environment config hooks pass", false, len(hookErr) == 0,
+			strings.Join(hookErr, ", "))
 
-		sess := d.desktopEngine().DetectSession()
+		sess := d.environmentEngine().DetectSession()
 		if sess.Graphical {
-			check("Desktop graphical session", false, sess.Compositor != "", sess.Message)
+			check("Environment graphical session", false, sess.Compositor != "", sess.Message)
 		} else {
-			check("Desktop graphical session", false, true,
+			check("Environment graphical session", false, true,
 				"skipped (no graphical session detected from this terminal)")
 		}
 	}
@@ -980,4 +1100,14 @@ func rpmPackageCount() int {
 		return 0
 	}
 	return strings.Count(out, "\n")
+}
+
+// containsString reports membership in a string list.
+func containsString(list []string, want string) bool {
+	for _, v := range list {
+		if v == want {
+			return true
+		}
+	}
+	return false
 }

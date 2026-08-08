@@ -11,8 +11,8 @@ import (
 
 	"github.com/Shreyas0047/veilbox/v3/core/cmd/veil/tui"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
-	"github.com/Shreyas0047/veilbox/v3/core/internal/desktop"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/environment"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/onboarding"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/onboarding/onboardingtest"
@@ -32,7 +32,7 @@ func setupE2E(t *testing.T) (onboarding.PlanInputs, *onboardingtest.Runner) {
 		Catalog:      experience.NewCatalogWith(env.CatDir, dnf),
 		Capabilities: capability.NewRegistryDir(env.CapDir),
 		Workspace:    &workspace.Engine{LookPath: func(string) (string, error) { return "/usr/bin/vim", nil }},
-		Desktop:      desktop.NewWith(experience.NewCatalogWith(env.CatDir, dnf), desktop.NewSystemWith(f)),
+		Environment:  environment.NewWith(experience.NewCatalogWith(env.CatDir, dnf), environment.NewSystemWith(f)),
 	}
 	return in, f
 }
@@ -115,7 +115,7 @@ func (d *driver) fullFlow() {
 	d.press("\r") // welcome: begin
 	d.waitFor("Step 1/5 — Role", 1)
 	d.press("\r") // role: cloud-engineer
-	d.waitFor("Step 2/5 — Desktop", 1)
+	d.waitFor("Step 2/5 — Environment", 1)
 	d.press("\x1b[B\r") // desktop: niri-desktop
 	d.waitFor("Step 3/5 — Capabilities", 1)
 	d.press("jj\r") // capabilities: both seeded rows selected, Done
@@ -158,7 +158,7 @@ func TestTUIFullWizardRun(t *testing.T) {
 		t.Fatalf("no selection returned")
 	}
 	sel := *res.sel
-	if sel.Profile != "cloud-engineer" || sel.Desktop != "niri-desktop" {
+	if sel.Profile != "cloud-engineer" || sel.Environment != "niri-desktop" {
 		t.Fatalf("selection wrong: %+v", sel)
 	}
 	if len(sel.Experiences) != 1 || sel.Experiences[0] != "networking-tools" {
@@ -172,7 +172,7 @@ func TestTUIFullWizardRun(t *testing.T) {
 	view := d.out.String()
 	for _, want := range []string{
 		"Step 1/5 — Role",
-		"Step 2/5 — Desktop",
+		"Step 2/5 — Environment",
 		"Step 3/5 — Capabilities",
 		"Step 4/5 — Workspace",
 		"Step 5/5 — Review",
@@ -209,7 +209,7 @@ func TestTUIAbortAtReview(t *testing.T) {
 	d.press("\r") // welcome
 	d.waitFor("Step 1/5 — Role", 1)
 	d.press("\r")
-	d.waitFor("Step 2/5 — Desktop", 1)
+	d.waitFor("Step 2/5 — Environment", 1)
 	d.press("\x1b[B\r")
 	d.waitFor("Step 3/5 — Capabilities", 1)
 	d.press("jj\r")
@@ -247,7 +247,7 @@ func TestTUIRestartRevisitsSteps(t *testing.T) {
 	d.press("\r") // welcome
 	d.waitFor("Step 1/5 — Role", 1)
 	d.press("\r")
-	d.waitFor("Step 2/5 — Desktop", 1)
+	d.waitFor("Step 2/5 — Environment", 1)
 	d.press("\x1b[B\r")
 	d.waitFor("Step 3/5 — Capabilities", 1)
 	d.press("jj\r")

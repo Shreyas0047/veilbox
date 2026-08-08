@@ -1,16 +1,17 @@
 name: niri-desktop
 display_name: Niri Experience
-type: desktop
+type: environment
 description: >-
-  Complete Niri + Noctalia desktop experience: scrollable-tiling
+  Complete Niri + Noctalia desktop environment: scrollable-tiling
   Wayland compositor with an integrated shell (bar, dock, launcher,
   notifications, lock screen, idle handling, wallpaper, clipboard,
   screenshots, OSDs) and a sensible default keybinding set, ready at
-  first login.
+  first login. The first reference bundled environment (ADR-0012,
+  ADR-0015).
 rpm: veilbox-experience-niri
 components:
   compositor: niri
-  shell: noctalia
+  desktop_shell: noctalia
   terminal: kitty
   launcher: builtin
   notifications: builtin
@@ -20,6 +21,20 @@ components:
   clipboard: builtin
   screenshot: builtin
   display_manager: sddm
+environment:
+  config:
+    - src: niri.config.kdl
+      dest: niri/config.kdl
+    - src: noctalia.config.toml
+      dest: noctalia/config.toml
+  managed:
+    - src: noctalia-veilbox.toml
+      dest: noctalia-veilbox.toml
+  validate:
+    files:
+      - noctalia/config.toml
+    commands:
+      - [noctalia, config, validate]
 packages:
   - niri
   - noctalia

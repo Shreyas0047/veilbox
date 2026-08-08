@@ -12,7 +12,7 @@ import (
 // scriptedUI is a fake UI driven by queued answers.
 type scriptedUI struct {
 	role         string
-	desktop      string
+	environment  string
 	capabilities func(current []string) []string
 	workspace    WorkspacePrefs
 	decisions    []ReviewDecision
@@ -39,9 +39,9 @@ func (u *scriptedUI) SelectRole(choices []RoleChoice, current string) (string, e
 	return "", nil
 }
 
-func (u *scriptedUI) SelectDesktop(choices []DesktopChoice, current string) (string, error) {
-	if u.desktop != "" {
-		return u.desktop, nil
+func (u *scriptedUI) SelectEnvironment(choices []EnvironmentChoice, current string) (string, error) {
+	if u.environment != "" {
+		return u.environment, nil
 	}
 	return current, nil
 }
@@ -68,7 +68,7 @@ func (u *scriptedUI) Review(info ReviewInfo) (ReviewDecision, error) {
 		u.decisions = u.decisions[1:]
 		return d, nil
 	}
-	return ReviewDecision{Apply: true, ActivateDesktop: true}, nil
+	return ReviewDecision{Apply: true, ActivateEnvironment: true}, nil
 }
 
 func (u *scriptedUI) ShowReport(report string) error {
@@ -90,9 +90,9 @@ func TestWizardFullRun(t *testing.T) {
 	f.Responses[f.Key("systemctl", "get-default")] = "multi-user.target"
 
 	ui := &scriptedUI{
-		role:      "cloud-engineer",
-		desktop:   "niri-desktop",
-		decisions: []ReviewDecision{{Apply: true, ActivateDesktop: true}},
+		role:        "cloud-engineer",
+		environment: "niri-desktop",
+		decisions:   []ReviewDecision{{Apply: true, ActivateEnvironment: true}},
 	}
 	w := &Wizard{UI: ui, Inputs: in, Existing: false}
 	sel, res, err := w.Run()
@@ -102,7 +102,7 @@ func TestWizardFullRun(t *testing.T) {
 	if res == nil || !res.Success {
 		t.Fatalf("wizard did not apply: %+v", res)
 	}
-	if sel.Profile != "cloud-engineer" || sel.Desktop != "niri-desktop" {
+	if sel.Profile != "cloud-engineer" || sel.Environment != "niri-desktop" {
 		t.Fatalf("selection wrong: %+v", sel)
 	}
 	// Fresh run must seed from the profile's recommended capabilities
@@ -124,7 +124,7 @@ func TestWizardFullRun(t *testing.T) {
 		t.Fatalf("expected install transaction:\n%s", joined)
 	}
 	if !strings.Contains(joined, "interactive:sudo systemctl enable sddm") {
-		t.Fatalf("expected desktop activation:\n%s", joined)
+		t.Fatalf("expected environment activation:\n%s", joined)
 	}
 	// The selection must persist the ledger.
 	saved, err := Load()
@@ -161,7 +161,7 @@ func TestWizardRestartRevisitsSteps(t *testing.T) {
 	in, _ := setupOnboarding(t)
 	ui := &scriptedUI{
 		role:      "cloud-engineer",
-		decisions: []ReviewDecision{{Restart: true}, {Apply: true, ActivateDesktop: false}},
+		decisions: []ReviewDecision{{Restart: true}, {Apply: true, ActivateEnvironment: false}},
 	}
 	w := &Wizard{UI: ui, Inputs: in, Existing: false}
 	_, res, err := w.Run()
@@ -176,12 +176,12 @@ func TestWizardRestartRevisitsSteps(t *testing.T) {
 	}
 }
 
-func TestWizardDesktopActivationDeclined(t *testing.T) {
+func TestWizardEnvironmentActivationDeclined(t *testing.T) {
 	in, f := setupOnboarding(t)
 	ui := &scriptedUI{
-		role:      "cloud-engineer",
-		desktop:   "niri-desktop",
-		decisions: []ReviewDecision{{Apply: true, ActivateDesktop: false}},
+		role:        "cloud-engineer",
+		environment: "niri-desktop",
+		decisions:   []ReviewDecision{{Apply: true, ActivateEnvironment: false}},
 	}
 	w := &Wizard{UI: ui, Inputs: in, Existing: false}
 	sel, res, err := w.Run()
@@ -191,9 +191,9 @@ func TestWizardDesktopActivationDeclined(t *testing.T) {
 	if res == nil || !res.Success {
 		t.Fatalf("apply: %+v", res)
 	}
-	// The selection keeps the desktop; the machine never activated it.
-	if sel.Desktop != "niri-desktop" {
-		t.Fatalf("declined activation must keep the desktop choice: %+v", sel)
+	// The selection keeps the environment; the machine never activated it.
+	if sel.Environment != "niri-desktop" {
+		t.Fatalf("declined activation must keep the environment choice: %+v", sel)
 	}
 	joined := strings.Join(f.Joined(), "\n")
 	if strings.Contains(joined, "systemctl enable sddm") {
@@ -203,7 +203,7 @@ func TestWizardDesktopActivationDeclined(t *testing.T) {
 		t.Fatalf("declined activation must not change the boot target:\n%s", joined)
 	}
 	if strings.Contains(joined, "sudo dnf install -y veilbox-experience-niri") {
-		t.Fatalf("declined activation must not install the desktop:\n%s", joined)
+		t.Fatalf("declined activation must not install the environment:\n%s", joined)
 	}
 }
 
@@ -225,9 +225,9 @@ func TestWizardAltersOneCapability(t *testing.T) {
 	}
 
 	ui := &scriptedUI{
-		role:      "cloud-engineer",
-		desktop:   "",
-		workspace: WorkspacePrefs{Editor: "vim", Prompt: "veilbox", Terminal: "system"},
+		role:        "cloud-engineer",
+		environment: "",
+		workspace:   WorkspacePrefs{Editor: "vim", Prompt: "veilbox", Terminal: "system"},
 		capabilities: func(current []string) []string {
 			// Alter exactly one capability: drop networking.
 			var out []string
@@ -238,7 +238,7 @@ func TestWizardAltersOneCapability(t *testing.T) {
 			}
 			return out
 		},
-		decisions: []ReviewDecision{{Apply: true, ActivateDesktop: false}},
+		decisions: []ReviewDecision{{Apply: true, ActivateEnvironment: false}},
 	}
 	w, err := LoadWizard(ui, in)
 	if err != nil {
@@ -295,7 +295,7 @@ func TestWizardRoleChangeKeepsCustomization(t *testing.T) {
 			}
 			return current
 		},
-		decisions: []ReviewDecision{{Apply: true, ActivateDesktop: false}},
+		decisions: []ReviewDecision{{Apply: true, ActivateEnvironment: false}},
 	}
 	w, err := LoadWizard(ui, in)
 	if err != nil {

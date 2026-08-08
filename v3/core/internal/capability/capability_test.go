@@ -66,8 +66,8 @@ capabilities:
   - networking
 `,
 		"niri-desktop.yaml": `name: niri-desktop
-type: desktop
-description: Desktop experience.
+type: environment
+description: Environment experience.
 rpm: veilbox-experience-niri
 components:
   compositor: niri
@@ -155,7 +155,7 @@ func TestResolverExperiencesFor(t *testing.T) {
 		t.Fatalf("experiences: %v", got)
 	}
 
-	// Desktop experiences are never derived.
+	// Environment experiences are never derived.
 	got, err = res.ExperiencesFor([]string{"desktop"})
 	if err == nil {
 		t.Fatal("desktop capability has no manifest; expected validation error")

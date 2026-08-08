@@ -5,62 +5,63 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Shreyas0047/veilbox/v3/core/internal/desktop"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/environment"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 )
 
-// cmdDesktop implements 'veil desktop'.
+// cmdEnvironment implements 'veil environment' (the legacy 'veil
+// desktop' name is accepted as an alias for one release, ADR-0012).
 //
-// Desktop activation is an explicit Desktop Engine sequence — the RPM
-// installs a desktop, 'veil desktop install' activates it. Installing
-// the experience package with DNF never changes the boot target and
-// never enables services.
-func cmdDesktop(args []string, stdout, stderr io.Writer, d deps) int {
-	fs := flag.NewFlagSet("desktop", flag.ContinueOnError)
+// Environment activation is an explicit Environment Engine sequence —
+// the RPM installs an environment, 'veil environment install' activates
+// it. Installing the experience package with DNF never changes the
+// boot target and never enables services.
+func cmdEnvironment(args []string, stdout, stderr io.Writer, d deps) int {
+	fs := flag.NewFlagSet("environment", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	rest := fs.Args()
-	engine := d.desktopEngine()
+	engine := d.environmentEngine()
 	if len(rest) == 0 {
-		return desktopOverview(stdout, stderr, engine)
+		return environmentOverview(stdout, stderr, engine)
 	}
 	switch rest[0] {
 	case "list":
-		return desktopList(stdout, stderr, engine)
+		return environmentList(stdout, stderr, engine)
 	case "info":
 		if len(rest) != 2 {
-			fmt.Fprintln(stderr, "usage: veil desktop info <name>")
+			fmt.Fprintln(stderr, "usage: veil environment info <name>")
 			return 2
 		}
-		return desktopInfo(rest[1], stdout, stderr, engine)
+		return environmentInfo(rest[1], stdout, stderr, engine)
 	case "install":
 		if len(rest) != 2 {
-			fmt.Fprintln(stderr, "usage: veil desktop install <name>")
+			fmt.Fprintln(stderr, "usage: veil environment install <name>")
 			return 2
 		}
-		return desktopInstall(rest[1], stdout, stderr, engine)
+		return environmentInstall(rest[1], stdout, stderr, engine)
 	case "remove":
 		if len(rest) != 2 {
-			fmt.Fprintln(stderr, "usage: veil desktop remove <name>")
+			fmt.Fprintln(stderr, "usage: veil environment remove <name>")
 			return 2
 		}
-		return desktopRemove(rest[1], stdout, stderr, engine)
+		return environmentRemove(rest[1], stdout, stderr, engine)
 	case "provision":
 		if len(rest) != 2 {
-			fmt.Fprintln(stderr, "usage: veil desktop provision <name>")
+			fmt.Fprintln(stderr, "usage: veil environment provision <name>")
 			return 2
 		}
-		return desktopProvision(rest[1], stdout, stderr, engine)
+		return environmentProvision(rest[1], stdout, stderr, engine)
 	default:
-		fmt.Fprintf(stderr, "veil desktop: unknown command %q\n", rest[0])
+		fmt.Fprintf(stderr, "veil environment: unknown command %q\n", rest[0])
 		return 2
 	}
 }
 
-func desktopOverview(stdout, stderr io.Writer, engine *desktop.Engine) int {
-	if code := desktopList(stdout, stderr, engine); code != 0 {
+func environmentOverview(stdout, stderr io.Writer, engine *environment.Engine) int {
+	if code := environmentList(stdout, stderr, engine); code != 0 {
 		return code
 	}
 	sess := engine.DetectSession()
@@ -71,17 +72,17 @@ func desktopOverview(stdout, stderr io.Writer, engine *desktop.Engine) int {
 	return 0
 }
 
-func desktopList(stdout, stderr io.Writer, engine *desktop.Engine) int {
+func environmentList(stdout, stderr io.Writer, engine *environment.Engine) int {
 	entries, err := engine.List()
 	if err != nil {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
 		return 1
 	}
 	if len(entries) == 0 {
-		fmt.Fprintln(stdout, "No desktop experiences known.")
+		fmt.Fprintln(stdout, "No environment experiences known.")
 		return 0
 	}
-	fmt.Fprintln(stdout, "DESKTOP          DISPLAY            STATUS      COMPOSITOR")
+	fmt.Fprintln(stdout, "ENVIRONMENT      DISPLAY            STATUS      COMPOSITOR")
 	fmt.Fprintln(stdout, "--------------------------------------------------------------")
 	for _, en := range entries {
 		compositor := en.Components[experience.CompCompositor]
@@ -97,13 +98,13 @@ func desktopList(stdout, stderr io.Writer, engine *desktop.Engine) int {
 	return 0
 }
 
-func desktopInfo(name string, stdout, stderr io.Writer, engine *desktop.Engine) int {
+func environmentInfo(name string, stdout, stderr io.Writer, engine *environment.Engine) int {
 	en, err := engine.Info(name)
 	if err != nil {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Desktop: %s\n", en.Name)
+	fmt.Fprintf(stdout, "Environment: %s\n", en.Name)
 	if en.DisplayName != "" {
 		fmt.Fprintf(stdout, "Display name: %s\n", en.DisplayName)
 	}
@@ -126,13 +127,13 @@ func desktopInfo(name string, stdout, stderr io.Writer, engine *desktop.Engine) 
 	return 0
 }
 
-func desktopInstall(name string, stdout, stderr io.Writer, engine *desktop.Engine) int {
+func environmentInstall(name string, stdout, stderr io.Writer, engine *environment.Engine) int {
 	plan, err := engine.PlanInstall(name)
 	if err != nil {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Installing desktop experience %q...\n", plan.Name)
+	fmt.Fprintf(stdout, "Installing environment experience %q...\n", plan.Name)
 	if len(plan.CreatedConfig) > 0 {
 		fmt.Fprintln(stdout, "User configuration to create (first-touch):")
 		for _, f := range plan.CreatedConfig {
@@ -168,17 +169,17 @@ func desktopInstall(name string, stdout, stderr io.Writer, engine *desktop.Engin
 	for _, s := range res.Steps {
 		fmt.Fprintf(stdout, "  %s\n", s)
 	}
-	fmt.Fprintf(stdout, "Desktop %q activated. Reboot to log in.\n", plan.Name)
+	fmt.Fprintf(stdout, "Environment %q activated. Reboot to log in.\n", plan.Name)
 	return 0
 }
 
-func desktopRemove(name string, stdout, stderr io.Writer, engine *desktop.Engine) int {
+func environmentRemove(name string, stdout, stderr io.Writer, engine *environment.Engine) int {
 	plan, err := engine.PlanRemove(name)
 	if err != nil {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Removing desktop experience %q...\n", plan.Name)
+	fmt.Fprintf(stdout, "Removing environment experience %q...\n", plan.Name)
 	plan, err = engine.Remove(name)
 	if err != nil {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
@@ -186,22 +187,22 @@ func desktopRemove(name string, stdout, stderr io.Writer, engine *desktop.Engine
 	}
 	fmt.Fprintf(stdout, "Removed %s (DNF).\n", plan.RPM)
 	fmt.Fprintln(stdout, "Remaining user configuration (preserved):")
-	fmt.Fprintf(stdout, "  %s\n", desktop.JoinFiles(plan.PreservedFiles))
+	fmt.Fprintf(stdout, "  %s\n", environment.JoinFiles(plan.PreservedFiles))
 	fmt.Fprintln(stdout, "Remaining Veilbox-managed configuration (not destroyed):")
-	fmt.Fprintf(stdout, "  %s\n", desktop.JoinFiles(plan.VeilboxFiles))
+	fmt.Fprintf(stdout, "  %s\n", environment.JoinFiles(plan.VeilboxFiles))
 	if plan.DeactivateHint != "" {
 		fmt.Fprintln(stdout, plan.DeactivateHint)
 	}
 	return 0
 }
 
-func desktopProvision(name string, stdout, stderr io.Writer, engine *desktop.Engine) int {
+func environmentProvision(name string, stdout, stderr io.Writer, engine *environment.Engine) int {
 	res, err := engine.Provision(name)
 	if err != nil {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "Provisioning desktop %q (Veilbox-owned configuration only):\n", name)
+	fmt.Fprintf(stdout, "Provisioning environment %q (Veilbox-owned configuration only):\n", name)
 	for _, f := range res.Created {
 		fmt.Fprintf(stdout, "  created %s\n", f)
 	}

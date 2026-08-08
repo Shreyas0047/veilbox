@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
-	"github.com/Shreyas0047/veilbox/v3/core/internal/desktop"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/environment"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/onboarding/onboardingtest"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/profile"
@@ -27,7 +27,7 @@ func setupOnboarding(t *testing.T) (PlanInputs, *onboardingtest.Runner) {
 		Catalog:      experience.NewCatalogWith(env.CatDir, dnf),
 		Capabilities: capability.NewRegistryDir(env.CapDir),
 		Workspace:    &workspace.Engine{LookPath: func(string) (string, error) { return "/usr/bin/vim", nil }},
-		Desktop:      desktop.NewWith(experience.NewCatalogWith(env.CatDir, dnf), desktop.NewSystemWith(f)),
+		Environment:  environment.NewWith(experience.NewCatalogWith(env.CatDir, dnf), environment.NewSystemWith(f)),
 	}
 	return in, f
 }
@@ -36,7 +36,7 @@ func selectionAll(in PlanInputs) Selection {
 	return Selection{
 		Profile:     "cloud-engineer",
 		Experiences: []string{"networking-tools"},
-		Desktop:     "niri-desktop",
+		Environment: "niri-desktop",
 		Workspace:   WorkspacePrefs{Editor: "vim", Prompt: "veilbox", Terminal: "system"},
 	}
 }
@@ -54,7 +54,7 @@ func TestApplyFullFlow(t *testing.T) {
 		t.Fatalf("apply not successful: %+v", res.Stages)
 	}
 	names := stageNames(res)
-	want := []string{"profile", "experiences", "workspace", "desktop", "verify"}
+	want := []string{"profile", "experiences", "workspace", "environment", "verify"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("stage order %v, want %v", names, want)
 	}

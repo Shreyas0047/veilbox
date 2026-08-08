@@ -21,13 +21,13 @@ type RoleChoice struct {
 	Applied     bool
 }
 
-// DesktopChoice is one selectable desktop experience.
-type DesktopChoice struct {
+// EnvironmentChoice is one selectable environment experience.
+type EnvironmentChoice struct {
 	Name        string
 	DisplayName string
 	Description string
 	Status      string // available / installed
-	Active      bool   // currently the active desktop
+	Active      bool   // currently the active environment
 }
 
 // CapabilityChoice is one selectable capability.
@@ -75,10 +75,10 @@ type ReviewDecision struct {
 	Apply bool
 	// Restart is true when the engineer went back to change choices.
 	Restart bool
-	// ActivateDesktop confirms desktop activation when a desktop is
-	// selected. Declining keeps the desktop in the selection but
+	// ActivateEnvironment confirms environment activation when an environment is
+	// selected. Declining keeps the environment in the selection but
 	// skips the activation stage for this run.
-	ActivateDesktop bool
+	ActivateEnvironment bool
 }
 
 // ErrAborted is the shared abort signal between the UI contract and
@@ -91,7 +91,7 @@ var ErrAborted = fmt.Errorf("onboarding aborted — no changes were made")
 type UI interface {
 	Welcome() error
 	SelectRole(choices []RoleChoice, current string) (string, error)
-	SelectDesktop(choices []DesktopChoice, current string) (string, error)
+	SelectEnvironment(choices []EnvironmentChoice, current string) (string, error)
 	SelectCapabilities(groups []CapabilityGroup, current []string) ([]string, error)
 	SelectWorkspace(opts WorkspaceOptions, current WorkspacePrefs) (WorkspacePrefs, error)
 	Review(info ReviewInfo) (ReviewDecision, error)
@@ -116,7 +116,7 @@ func LoadWizard(ui UI, in PlanInputs) (*Wizard, error) {
 	if err != nil {
 		return nil, err
 	}
-	existing := sel.Profile != "" || len(sel.Experiences) > 0 || len(sel.Capabilities) > 0 || sel.Desktop != ""
+	existing := sel.Profile != "" || len(sel.Experiences) > 0 || len(sel.Capabilities) > 0 || sel.Environment != ""
 	if err := sel.Derive(in.Resolver()); err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ func (w *Wizard) Run() (*Selection, *ApplyResult, error) {
 		if err := w.stepRole(); err != nil {
 			return nil, nil, err
 		}
-		if err := w.stepDesktop(); err != nil {
+		if err := w.stepEnvironment(); err != nil {
 			return nil, nil, err
 		}
 		if err := w.stepCapabilities(); err != nil {
@@ -167,8 +167,8 @@ func (w *Wizard) Run() (*Selection, *ApplyResult, error) {
 		}
 
 		applySel := w.Selection
-		if !decision.ActivateDesktop && applySel.Desktop != "" {
-			applySel.Desktop = ""
+		if !decision.ActivateEnvironment && applySel.Environment != "" {
+			applySel.Environment = ""
 		}
 		res, aerr := Apply(applySel, w.Inputs)
 		if aerr != nil && res == nil {
@@ -177,7 +177,7 @@ func (w *Wizard) Run() (*Selection, *ApplyResult, error) {
 		}
 		_ = w.UI.ShowReport(RenderReport(res, aerr))
 
-		// Persist the full selection (including a declined desktop) so
+		// Persist the full selection (including a declined environment) so
 		// the next run resumes exactly where the engineer left off.
 		if res != nil && res.Log != nil {
 			w.Selection.LastApply = res.Log
@@ -225,18 +225,18 @@ func (w *Wizard) stepRole() error {
 	return nil
 }
 
-func (w *Wizard) stepDesktop() error {
+func (w *Wizard) stepEnvironment() error {
 	entries, err := w.Inputs.Catalog.List()
 	if err != nil {
 		return fmt.Errorf("list experiences: %w", err)
 	}
 	active := activeCompositor(w.Inputs)
-	var choices []DesktopChoice
+	var choices []EnvironmentChoice
 	for _, e := range entries {
-		if e.Type != experience.TypeDesktop || e.RPM == "" {
+		if e.Type != experience.TypeEnvironment || e.RPM == "" {
 			continue
 		}
-		choices = append(choices, DesktopChoice{
+		choices = append(choices, EnvironmentChoice{
 			Name:        e.Name,
 			DisplayName: display(e.DisplayName, e.Name),
 			Description: e.Description,
@@ -245,11 +245,11 @@ func (w *Wizard) stepDesktop() error {
 		})
 	}
 	sort.Slice(choices, func(i, j int) bool { return choices[i].Name < choices[j].Name })
-	chosen, err := w.UI.SelectDesktop(choices, w.Selection.Desktop)
+	chosen, err := w.UI.SelectEnvironment(choices, w.Selection.Environment)
 	if err != nil {
 		return err
 	}
-	w.Selection.Desktop = chosen
+	w.Selection.Environment = chosen
 	return nil
 }
 
@@ -337,7 +337,7 @@ func appliedProfile() string {
 }
 
 func activeCompositor(in PlanInputs) string {
-	entries, err := in.Desktop.List()
+	entries, err := in.Environment.List()
 	if err != nil {
 		return ""
 	}

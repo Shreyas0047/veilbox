@@ -20,7 +20,7 @@ import (
 
 // cmdOnboard implements 'veil onboard'.
 //
-// Interactive mode walks the wizard (role → desktop → capabilities →
+// Interactive mode walks the wizard (role → environment → capabilities →
 // workspace → review). In a terminal it runs the Bubble Tea TUI; from
 // a script or a pipe it falls back to the line UI. --yes applies the
 // saved selection without any prompting; on a fresh machine it seeds
@@ -43,7 +43,7 @@ func cmdOnboard(args []string, stdout, stderr io.Writer, d deps) int {
 		Catalog:      d.catalog(),
 		Capabilities: capability.NewRegistry(),
 		Workspace:    workspace.NewEngine(),
-		Desktop:      d.desktopEngine(),
+		Environment:  d.environmentEngine(),
 	}
 
 	if *yes {
@@ -69,7 +69,7 @@ func cmdOnboard(args []string, stdout, stderr io.Writer, d deps) int {
 	}
 	if res == nil {
 		fmt.Fprintln(stdout, "Nothing applied.")
-		if sel != nil && (sel.Profile != "" || sel.Desktop != "" || len(sel.Experiences) > 0) {
+		if sel != nil && (sel.Profile != "" || sel.Environment != "" || len(sel.Experiences) > 0) {
 			fmt.Fprintln(stdout, "Your selection is saved. Rerun 'veil onboard' to continue.")
 		}
 		return 0
@@ -77,10 +77,10 @@ func cmdOnboard(args []string, stdout, stderr io.Writer, d deps) int {
 	if !res.Success {
 		return 1
 	}
-	// A desktop kept in the selection but not activated this run is
+	// An environment kept in the selection but not activated this run is
 	// worth an explicit pointer; the selection already says so.
-	if sel != nil && sel.Desktop != "" && !stageRan(res, "desktop") {
-		fmt.Fprintf(stdout, "Desktop %q is selected but NOT activated. Rerun 'veil onboard' and confirm activation.\n", sel.Desktop)
+	if sel != nil && sel.Environment != "" && !stageRan(res, "environment") {
+		fmt.Fprintf(stdout, "Environment %q is selected but NOT activated. Rerun 'veil onboard' and confirm activation.\n", sel.Environment)
 	}
 	return 0
 }
@@ -116,7 +116,7 @@ func onboardYes(stdout, stderr io.Writer, inputs onboarding.PlanInputs) int {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
 		return 1
 	}
-	fresh := sel.Profile == "" && sel.Desktop == "" && len(sel.Experiences) == 0 && len(sel.Capabilities) == 0
+	fresh := sel.Profile == "" && sel.Environment == "" && len(sel.Experiences) == 0 && len(sel.Capabilities) == 0
 	if fresh {
 		names, lerr := inputs.Registry.List()
 		if lerr != nil {
@@ -164,7 +164,7 @@ type lineUI struct {
 }
 
 func (u *lineUI) Welcome() error {
-	fmt.Fprintln(u.out, "Veilbox onboarding — pick your engineer role, desktop and capabilities.")
+	fmt.Fprintln(u.out, "Veilbox onboarding — pick your engineer role, environment and capabilities.")
 	fmt.Fprintln(u.out, "Enter a number to choose. Empty input keeps the current value. 'q' quits.")
 	return nil
 }
@@ -232,7 +232,7 @@ func (u *lineUI) SelectRole(choices []onboarding.RoleChoice, current string) (st
 	return names[n], nil
 }
 
-func (u *lineUI) SelectDesktop(choices []onboarding.DesktopChoice, current string) (string, error) {
+func (u *lineUI) SelectEnvironment(choices []onboarding.EnvironmentChoice, current string) (string, error) {
 	cur := 0
 	names := make([]string, len(choices)+1)
 	names[0] = ""
@@ -242,7 +242,7 @@ func (u *lineUI) SelectDesktop(choices []onboarding.DesktopChoice, current strin
 			cur = i + 1
 		}
 	}
-	fmt.Fprintln(u.out, "\nDESKTOP")
+	fmt.Fprintln(u.out, "\nENVIRONMENT")
 	fmt.Fprintf(u.out, "%s 0. None — keep the machine headless\n", marker(cur == 0))
 	for i, c := range choices {
 		status := ""
@@ -254,7 +254,7 @@ func (u *lineUI) SelectDesktop(choices []onboarding.DesktopChoice, current strin
 		}
 		fmt.Fprintf(u.out, "%s %d. %s — %s%s\n", marker(cur == i+1), i+1, c.DisplayName, c.Description, status)
 	}
-	n, err := u.pickNumber("Select a desktop: ", len(choices)+1, cur)
+	n, err := u.pickNumber("Select an environment: ", len(choices)+1, cur)
 	if err != nil {
 		return "", err
 	}
@@ -391,17 +391,17 @@ func (u *lineUI) Review(info onboarding.ReviewInfo) (onboarding.ReviewDecision, 
 		}
 		switch strings.ToLower(line) {
 		case "y", "yes":
-			decision := onboarding.ReviewDecision{Apply: true, ActivateDesktop: true}
-			if info.Selection.Desktop != "" {
-				al, aerr := u.read(fmt.Sprintf("Activate %s now (start it at login, enable SDDM)? [Y/n]: ", info.Selection.Desktop))
+			decision := onboarding.ReviewDecision{Apply: true, ActivateEnvironment: true}
+			if info.Selection.Environment != "" {
+				al, aerr := u.read(fmt.Sprintf("Activate %s now (enable its display manager and start at login)? [Y/n]: ", info.Selection.Environment))
 				if aerr != nil {
 					return onboarding.ReviewDecision{}, aerr
 				}
 				switch strings.ToLower(al) {
 				case "", "y", "yes":
-					decision.ActivateDesktop = true
+					decision.ActivateEnvironment = true
 				default:
-					decision.ActivateDesktop = false
+					decision.ActivateEnvironment = false
 				}
 			}
 			return decision, nil

@@ -222,12 +222,12 @@ func TestRemoveNotInstalled(t *testing.T) {
 
 const niriDesktopYAML = `name: niri-desktop
 display_name: Niri Experience
-type: desktop
-description: Complete Niri + Noctalia desktop experience.
+type: environment
+description: Complete Niri + Noctalia desktop environment.
 rpm: veilbox-experience-niri
 components:
   compositor: niri
-  shell: noctalia
+  desktop_shell: noctalia
   terminal: kitty
   launcher: builtin
   notifications: builtin
@@ -237,6 +237,20 @@ components:
   clipboard: builtin
   screenshot: builtin
   display_manager: sddm
+environment:
+  config:
+    - src: niri.config.kdl
+      dest: niri/config.kdl
+    - src: noctalia.config.toml
+      dest: noctalia/config.toml
+  managed:
+    - src: noctalia-veilbox.toml
+      dest: noctalia-veilbox.toml
+  validate:
+    files:
+      - noctalia/config.toml
+    commands:
+      - [noctalia, config, validate]
 packages:
   - niri
   - noctalia
@@ -250,17 +264,50 @@ func TestDesktopManifestValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if m.Type != TypeDesktop {
+	if m.Type != TypeEnvironment {
 		t.Fatalf("type: %s", m.Type)
 	}
 	if m.DisplayName != "Niri Experience" {
 		t.Fatalf("display_name: %q", m.DisplayName)
 	}
-	if m.Components[CompCompositor] != "niri" || m.Components[CompShell] != "noctalia" {
+	if m.Components[CompCompositor] != "niri" || m.Components[CompDesktopShell] != "noctalia" {
 		t.Fatalf("components: %v", m.Components)
 	}
 	if err := m.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
+	}
+	if m.Environment == nil || len(m.Environment.Config) != 2 || len(m.Environment.Managed) != 1 {
+		t.Fatalf("environment contract: %+v", m.Environment)
+	}
+}
+
+// TestLegacyDesktopManifestMigrated covers the ADR-0012 rename: the
+// "desktop" type and "shell" component slot are accepted on read and
+// normalized by the loader.
+func TestLegacyDesktopManifestMigrated(t *testing.T) {
+	legacy := `name: niri-desktop
+type: desktop
+rpm: veilbox-experience-niri
+components:
+  compositor: niri
+  shell: noctalia
+  terminal: kitty
+  display_manager: sddm
+`
+	dir := t.TempDir()
+	writeCatalog(t, dir, map[string]string{"niri-desktop.yaml": legacy})
+	m, err := NewCatalogWith(dir, dnfops.NewWithRunner(newFakeRunner())).Load("niri-desktop")
+	if err != nil {
+		t.Fatalf("load legacy manifest: %v", err)
+	}
+	if m.Type != TypeEnvironment {
+		t.Fatalf("type not migrated: %s", m.Type)
+	}
+	if m.Components[CompDesktopShell] != "noctalia" {
+		t.Fatalf("shell slot not migrated: %v", m.Components)
+	}
+	if _, ok := m.Components["shell"]; ok {
+		t.Fatalf("legacy shell key left behind: %v", m.Components)
 	}
 }
 
@@ -284,7 +331,7 @@ type: tooling
 components:
   compositor: niri
 `,
-			want: "components are only valid for type: desktop",
+			want: "components are only valid for type: environment",
 		},
 		{
 			name: "desktop without rpm",
@@ -299,16 +346,16 @@ components:
 			want: "must declare an installable rpm",
 		},
 		{
-			name: "missing shell component",
+			name: "missing desktop shell component",
 			yaml: `name: x
-type: desktop
+type: environment
 rpm: veilbox-experience-x
 components:
   compositor: niri
   terminal: kitty
   display_manager: sddm
 `,
-			want: `component "shell" is required`,
+			want: `component "desktop_shell" is required`,
 		},
 		{
 			name: "unknown component key",
@@ -350,6 +397,91 @@ components:
 `,
 			want: "must name a package",
 		},
+		{
+			name: "config dest path traversal",
+			yaml: `name: x
+type: environment
+rpm: veilbox-experience-x
+components:
+  compositor: niri
+  desktop_shell: noctalia
+  terminal: kitty
+  display_manager: sddm
+environment:
+  config:
+    - src: a
+      dest: ../../etc/passwd
+`,
+			want: "path traversal",
+		},
+		{
+			name: "config dest absolute",
+			yaml: `name: x
+type: environment
+rpm: veilbox-experience-x
+components:
+  compositor: niri
+  desktop_shell: noctalia
+  terminal: kitty
+  display_manager: sddm
+environment:
+  config:
+    - src: a
+      dest: /etc/evil
+`,
+			want: "relative to the user config dir",
+		},
+		{
+			name: "managed file missing dest",
+			yaml: `name: x
+type: environment
+rpm: veilbox-experience-x
+components:
+  compositor: niri
+  desktop_shell: noctalia
+  terminal: kitty
+  display_manager: sddm
+environment:
+  managed:
+    - src: a
+`,
+			want: "needs both src and dest",
+		},
+		{
+			name: "validate command injection",
+			yaml: `name: x
+type: environment
+rpm: veilbox-experience-x
+components:
+  compositor: niri
+  desktop_shell: noctalia
+  terminal: kitty
+  display_manager: sddm
+environment:
+  validate:
+    commands:
+      - [noctalia, "config; rm -rf /"]
+`,
+			want: "safe tokens only",
+		},
+		{
+			name: "duplicate validate file",
+			yaml: `name: x
+type: environment
+rpm: veilbox-experience-x
+components:
+  compositor: niri
+  desktop_shell: noctalia
+  terminal: kitty
+  display_manager: sddm
+environment:
+  validate:
+    files:
+      - noctalia/config.toml
+      - noctalia/config.toml
+`,
+			want: "duplicate validate file",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -381,10 +513,10 @@ func TestDesktopCatalogEntryType(t *testing.T) {
 	for _, e := range entries {
 		byName[e.Name] = e.Type
 	}
-	if byName["networking-tools"] == TypeDesktop {
-		t.Fatalf("tooling experience must not be desktop type")
+	if byName["networking-tools"] == TypeEnvironment {
+		t.Fatalf("tooling experience must not be environment type")
 	}
-	if byName["niri-desktop"] != TypeDesktop {
-		t.Fatalf("desktop type: %s", byName["niri-desktop"])
+	if byName["niri-desktop"] != TypeEnvironment {
+		t.Fatalf("environment type: %s", byName["niri-desktop"])
 	}
 }

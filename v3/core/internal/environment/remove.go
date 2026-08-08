@@ -1,4 +1,4 @@
-package desktop
+package environment
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 )
 
-// RemovePlan describes a conservative desktop removal before it is
+// RemovePlan describes a conservative environment removal before it is
 // executed. Removal is intentionally non-destructive: only the
 // experience package is removed; user-side configuration (including
 // Veilbox-generated files) is preserved and reported, and the display
@@ -22,10 +22,10 @@ type RemovePlan struct {
 	DeactivateHint string
 }
 
-// PlanRemove computes the removal plan for a desktop experience.
+// PlanRemove computes the removal plan for an environment experience.
 // Pure read-only.
 func (e *Engine) PlanRemove(name string) (*RemovePlan, error) {
-	m, err := e.loadDesktopManifest(name)
+	m, err := e.loadEnvironmentManifest(name)
 	if err != nil {
 		return nil, err
 	}
@@ -34,15 +34,13 @@ func (e *Engine) PlanRemove(name string) (*RemovePlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, p := range []string{
-		filepath.Join(cfg, "niri", "config.kdl"),
-		filepath.Join(cfg, "noctalia", "config.toml"),
-	} {
+	for _, dest := range configDestinations(m) {
+		p := filepath.Join(cfg, dest)
 		if _, err := os.Stat(p); err == nil {
 			plan.PreservedFiles = append(plan.PreservedFiles, p)
 		}
 	}
-	veilDir := filepath.Join(cfg, "veilbox", "desktop", name)
+	veilDir := filepath.Join(cfg, "veilbox", "environment", name)
 	if entries, err := os.ReadDir(veilDir); err == nil {
 		for _, en := range entries {
 			plan.VeilboxFiles = append(plan.VeilboxFiles, filepath.Join(veilDir, en.Name()))
@@ -54,15 +52,16 @@ func (e *Engine) PlanRemove(name string) (*RemovePlan, error) {
 			target = "multi-user.target"
 		}
 		plan.DeactivateHint = fmt.Sprintf(
-			"Display manager and boot target are untouched by removal. To deactivate the desktop: sudo systemctl disable --now %s; sudo systemctl set-default %s",
+			"Display manager and boot target are untouched by removal. To deactivate the environment: sudo systemctl disable --now %s; sudo systemctl set-default %s",
 			dm, target)
 	}
 	return plan, nil
 }
 
-// Remove removes a desktop experience: the experience meta-package
-// through DNF only. User configuration, the display manager and the
-// boot target are preserved; the caller reports what remains.
+// Remove removes an environment experience: the experience
+// meta-package through DNF only. User configuration, the display
+// manager and the boot target are preserved; the caller reports what
+// remains.
 func (e *Engine) Remove(name string) (*RemovePlan, error) {
 	plan, err := e.PlanRemove(name)
 	if err != nil {
