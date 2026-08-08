@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 )
@@ -27,8 +28,10 @@ func runCLI(t *testing.T, d deps, args ...string) cliResult {
 
 func fakeDeps(t *testing.T) (deps, *fakeCLIRunner) {
 	t.Helper()
-	catalogDir := t.TempDir()
-	writeTestCatalog(t, catalogDir)
+	root := t.TempDir()
+	catalogDir := filepath.Join(root, "experiences")
+	capDir := filepath.Join(root, "capabilities")
+	writeTestCatalog(t, catalogDir, capDir)
 	f := &fakeCLIRunner{responses: map[string]string{}, errByCmd: map[string]error{}}
 	dnf := dnfops.NewWithRunner(f)
 	d := deps{
@@ -36,6 +39,9 @@ func fakeDeps(t *testing.T) (deps, *fakeCLIRunner) {
 			return experience.NewCatalogWith(catalogDir, dnf)
 		},
 		newDNF: func() *dnfops.System { return dnf },
+		newCapabilities: func() *capability.Registry {
+			return capability.NewRegistryDir(capDir)
+		},
 	}
 	return d, f
 }
@@ -86,12 +92,24 @@ func (f *fakeCLIRunner) notInstalled(pkg string) {
 	f.errByCmd[f.key("rpm", "-q", pkg)] = errors.New("exit status 1")
 }
 
-func writeTestCatalog(t *testing.T, dir string) {
+func writeTestCatalog(t *testing.T, dir, capDir string) {
 	t.Helper()
 	os.MkdirAll(dir, 0o755)
+	os.MkdirAll(capDir, 0o755)
+	for name, content := range map[string]string{
+		"base-operations.yaml":     "name: base-operations\ndomain: fundamentals\ntier: core\ndescription: Essential system operations.\n",
+		"networking.yaml":          "name: networking\ndomain: networking\ntier: core\ndescription: Network diagnostics.\n",
+		"terminal-operations.yaml": "name: terminal-operations\ndomain: terminal\ntier: core\ndescription: Terminal operations.\n",
+	} {
+		if err := os.WriteFile(filepath.Join(capDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	content := `name: networking-tools
 description: Networking diagnostics toolkit for engineers.
 rpm: veilbox-experience-networking-tools
+capabilities:
+  - networking
 packages:
   - bind-utils
   - tcpdump
@@ -101,6 +119,8 @@ packages:
 	}
 	planned := `name: terminal-ops
 description: Terminal operations toolkit. Planned.
+capabilities:
+  - terminal-operations
 `
 	if err := os.WriteFile(filepath.Join(dir, "terminal-ops.yaml"), []byte(planned), 0o644); err != nil {
 		t.Fatal(err)
@@ -121,10 +141,10 @@ const cliDevopsYAML = `name: devops
 display_name: DevOps Engineer
 description: Builds and operates delivery pipelines.
 role: devops
-recommended_experiences:
-  - networking-tools
-optional_experiences:
-  - terminal-ops
+recommended_capabilities:
+  - networking
+optional_capabilities:
+  - terminal-operations
 tags: [ci, delivery]
 workspace_preferences:
   shell: bash
@@ -160,20 +180,22 @@ func TestProfileApply(t *testing.T) {
 	writeProfile(t, root, "devops", cliDevopsYAML)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("VEILBOX_ROOT", root)
+	d, f := fakeDeps(t)
+	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
 
-	r := runCLI(t, deps{}, "profile", "apply", "devops")
+	r := runCLI(t, d, "profile", "apply", "devops")
 	if r.code != 0 || !strings.Contains(r.stdout, "Profile \"devops\" applied") {
 		t.Fatalf("code=%d out=%q err=%q", r.code, r.stdout, r.stderr)
 	}
 	// apply must present the recommendation summary without installing.
-	if !strings.Contains(r.stdout, "recommends the following experiences") {
+	if !strings.Contains(r.stdout, "recommends the following capabilities") {
 		t.Fatalf("no recommendation summary in %q", r.stdout)
 	}
 	if !strings.Contains(r.stdout, "Nothing was installed") {
 		t.Fatalf("apply must not install: %q", r.stdout)
 	}
 
-	r2 := runCLI(t, deps{}, "profile")
+	r2 := runCLI(t, d, "profile")
 	if !strings.Contains(r2.stdout, "Profile: devops") {
 		t.Fatalf("out=%q", r2.stdout)
 	}
@@ -193,11 +215,13 @@ func TestProfileListMarksActive(t *testing.T) {
 	writeProfile(t, root, "sre", "name: sre\ndescription: keeps systems reliable.\n")
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("VEILBOX_ROOT", root)
+	d, f := fakeDeps(t)
+	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
 
-	if r := runCLI(t, deps{}, "profile", "apply", "devops"); r.code != 0 {
+	if r := runCLI(t, d, "profile", "apply", "devops"); r.code != 0 {
 		t.Fatalf("apply: %q", r.stderr)
 	}
-	r := runCLI(t, deps{}, "profile", "list")
+	r := runCLI(t, d, "profile", "list")
 	if r.code != 0 {
 		t.Fatalf("code=%d", r.code)
 	}
@@ -220,9 +244,9 @@ func TestProfileShow(t *testing.T) {
 	for _, want := range []string{
 		"DevOps Engineer",
 		"Builds and operates delivery pipelines.",
-		"Recommended experiences:",
-		"networking-tools",
-		"Optional experiences:",
+		"Recommended capabilities:",
+		"networking",
+		"Optional capabilities:",
 		"shell: bash",
 	} {
 		if !strings.Contains(r.stdout, want) {
@@ -385,6 +409,55 @@ func TestExperienceListShowsInstalled(t *testing.T) {
 	}
 }
 
+func TestCapabilityList(t *testing.T) {
+	root := t.TempDir()
+	writeProfile(t, root, "devops", cliDevopsYAML)
+	t.Setenv("VEILBOX_ROOT", root)
+	d, f := fakeDeps(t)
+	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
+
+	r := runCLI(t, d, "capability", "list")
+	if r.code != 0 {
+		t.Fatalf("code=%d err=%q", r.code, r.stderr)
+	}
+	for _, want := range []string{"base-operations", "networking", "networking-tools", "CAPABILITY"} {
+		if !strings.Contains(r.stdout, want) {
+			t.Fatalf("missing %q in %q", want, r.stdout)
+		}
+	}
+}
+
+func TestCapabilityInfo(t *testing.T) {
+	root := t.TempDir()
+	writeProfile(t, root, "devops", cliDevopsYAML)
+	t.Setenv("VEILBOX_ROOT", root)
+	d, f := fakeDeps(t)
+	f.responses[f.key("rpm", "-qa", "--queryformat", "%{NAME}\n")] = ""
+
+	r := runCLI(t, d, "capability", "info", "networking")
+	if r.code != 0 {
+		t.Fatalf("code=%d err=%q", r.code, r.stderr)
+	}
+	for _, want := range []string{
+		"Capability: networking",
+		"Domain: networking",
+		"Implementing experiences:",
+		"networking-tools",
+	} {
+		if !strings.Contains(r.stdout, want) {
+			t.Fatalf("missing %q in %q", want, r.stdout)
+		}
+	}
+}
+
+func TestCapabilityInfoUnknown(t *testing.T) {
+	d, _ := fakeDeps(t)
+	r := runCLI(t, d, "capability", "info", "nope")
+	if r.code != 1 || r.stderr == "" {
+		t.Fatalf("code=%d stderr=%q", r.code, r.stderr)
+	}
+}
+
 func TestExperienceInfo(t *testing.T) {
 	root := t.TempDir()
 	writeProfile(t, root, "devops", cliDevopsYAML)
@@ -469,7 +542,7 @@ func TestDoctorPassesWithProfileChecks(t *testing.T) {
 		"Profile state parses",
 		"Active profile exists",
 		"Profile manifests valid",
-		"Profile references known experiences",
+		"Profile capabilities resolve to experiences",
 		"DNF repositories reachable",
 		"Veilbox repository configured",
 	} {

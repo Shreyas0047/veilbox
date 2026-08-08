@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -30,6 +31,10 @@ import (
 
 // PackagePrefix is the name prefix of all Veilbox experience RPMs.
 const PackagePrefix = "veilbox-experience-"
+
+// namePattern matches manifest names and capability references:
+// lowercase letters, digits, and hyphens.
+var namePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // Status of an experience.
 type Status string
@@ -119,6 +124,11 @@ type Manifest struct {
 	// Packages lists the concrete Fedora packages the meta-package
 	// pulls in (informational; the RPM Requires are authoritative).
 	Packages []string `yaml:"packages,omitempty"`
+	// Capabilities lists the capability names this experience
+	// implements (the N→M mapping of ADR-0011). The Capability Engine
+	// derives the required experience set from a capability selection;
+	// the mapping is validated by doctor.
+	Capabilities []string `yaml:"capabilities,omitempty"`
 	// Components declares the desktop stack for type: desktop
 	// experiences. Values are "builtin" or a safe-token name.
 	Components map[string]string `yaml:"components,omitempty"`
@@ -135,7 +145,7 @@ func (m Manifest) Validate() error {
 		if len(m.Components) > 0 {
 			return fmt.Errorf("experience %q: components are only valid for type: desktop", m.Name)
 		}
-		return nil
+		return m.validateCapabilities()
 	case TypeDesktop:
 	default:
 		return fmt.Errorf("experience %q: unknown type %q (want %q or %q)", m.Name, m.Type, TypeTooling, TypeDesktop)
@@ -161,6 +171,23 @@ func (m Manifest) Validate() error {
 		if val == "builtin" && !builtinAllowed(key) {
 			return fmt.Errorf("experience %q: component %q must name a package (builtin is not valid here)", m.Name, key)
 		}
+	}
+	return m.validateCapabilities()
+}
+
+// validateCapabilities checks capability reference names on the
+// manifest. Cross-registry existence is checked by the Capability
+// Engine (see capability.Resolver.CheckMapping).
+func (m Manifest) validateCapabilities() error {
+	seen := make(map[string]bool, len(m.Capabilities))
+	for _, c := range m.Capabilities {
+		if !namePattern.MatchString(c) {
+			return fmt.Errorf("experience %q: invalid capability reference %q", m.Name, c)
+		}
+		if seen[c] {
+			return fmt.Errorf("experience %q: duplicate capability reference %q", m.Name, c)
+		}
+		seen[c] = true
 	}
 	return nil
 }
@@ -238,6 +265,13 @@ func (c *Catalog) List() ([]Entry, error) {
 		entries = append(entries, e)
 	}
 	return entries, nil
+}
+
+// Manifests returns all catalog manifests, sorted, with no system
+// state attached. Used by the Capability Engine's mapping (no DNF
+// queries); List is the status-bearing variant.
+func (c *Catalog) Manifests() ([]Manifest, error) {
+	return c.loadAll()
 }
 
 // Install resolves an experience to its RPM and runs a DNF

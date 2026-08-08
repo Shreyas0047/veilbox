@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Shreyas0047/veilbox/v3/core/cmd/veil/tui"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/desktop"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
@@ -27,10 +28,11 @@ func setupE2E(t *testing.T) (onboarding.PlanInputs, *onboardingtest.Runner) {
 	f := onboardingtest.New()
 	dnf := dnfops.NewWithRunner(f)
 	in := onboarding.PlanInputs{
-		Registry:  profile.NewRegistryDir(env.ProfDir),
-		Catalog:   experience.NewCatalogWith(env.CatDir, dnf),
-		Workspace: &workspace.Engine{LookPath: func(string) (string, error) { return "/usr/bin/vim", nil }},
-		Desktop:   desktop.NewWith(experience.NewCatalogWith(env.CatDir, dnf), desktop.NewSystemWith(f)),
+		Registry:     profile.NewRegistryDir(env.ProfDir),
+		Catalog:      experience.NewCatalogWith(env.CatDir, dnf),
+		Capabilities: capability.NewRegistryDir(env.CapDir),
+		Workspace:    &workspace.Engine{LookPath: func(string) (string, error) { return "/usr/bin/vim", nil }},
+		Desktop:      desktop.NewWith(experience.NewCatalogWith(env.CatDir, dnf), desktop.NewSystemWith(f)),
 	}
 	return in, f
 }
@@ -116,7 +118,7 @@ func (d *driver) fullFlow() {
 	d.waitFor("Step 2/5 — Desktop", 1)
 	d.press("\x1b[B\r") // desktop: niri-desktop
 	d.waitFor("Step 3/5 — Capabilities", 1)
-	d.press("j\r") // capabilities: keep recommended networking-tools, Done
+	d.press("jj\r") // capabilities: both seeded rows selected, Done
 	d.waitFor("Step 4/5 — Workspace", 1)
 	d.press("\rvim\rj\r\rj\rj\rj\r") // workspace: vim, veilbox, system, tmux on
 	d.waitFor("Step 5/5 — Review", 1)
@@ -210,7 +212,7 @@ func TestTUIAbortAtReview(t *testing.T) {
 	d.waitFor("Step 2/5 — Desktop", 1)
 	d.press("\x1b[B\r")
 	d.waitFor("Step 3/5 — Capabilities", 1)
-	d.press("j\r")
+	d.press("jj\r")
 	d.waitFor("Step 4/5 — Workspace", 1)
 	d.press("\rvim\rj\r\rj\rj\rj\r")
 	d.waitFor("Step 5/5 — Review", 1)
@@ -248,7 +250,7 @@ func TestTUIRestartRevisitsSteps(t *testing.T) {
 	d.waitFor("Step 2/5 — Desktop", 1)
 	d.press("\x1b[B\r")
 	d.waitFor("Step 3/5 — Capabilities", 1)
-	d.press("j\r")
+	d.press("jj\r")
 	d.waitFor("Step 4/5 — Workspace", 1)
 	d.press("\rvim\rj\r\rj\rj\rj\r")
 	d.waitFor("Step 5/5 — Review", 1)

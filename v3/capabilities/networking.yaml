@@ -1,0 +1,8 @@
+name: networking
+description: >-
+  Network diagnostics: DNS query tools, traceroute, netcat, iproute2
+  and packet capture for tracing paths, connectivity and failures.
+domain: Networking
+tier: core
+provides:
+  - networking

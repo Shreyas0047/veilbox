@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/profile"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/workspace"
@@ -15,7 +16,7 @@ type RoleChoice struct {
 	Name        string
 	DisplayName string
 	Description string
-	Recommended []string // display names of recommended experiences
+	Recommended []string // display names of recommended capabilities
 	Optional    []string
 	Applied     bool
 }
@@ -29,20 +30,28 @@ type DesktopChoice struct {
 	Active      bool   // currently the active desktop
 }
 
-// ExperienceChoice is one selectable capability.
-type ExperienceChoice struct {
+// CapabilityChoice is one selectable capability.
+type CapabilityChoice struct {
 	Name        string
 	DisplayName string
 	Domain      string
 	Description string
-	Status      string // available / installed
-	Recommended bool   // recommended by the selected profile
+	// Status of the derived experience(s): available / installed /
+	// planned. A capability may map to several experiences; status is
+	// the best available summary.
+	Status string
+	// Recommended marks capabilities recommended by the selected
+	// profile.
+	Recommended bool
+	// Required marks the always-included base capability: it cannot
+	// be deselected.
+	Required bool
 }
 
-// ExperienceGroup groups capabilities by concept (domain).
-type ExperienceGroup struct {
+// CapabilityGroup groups capabilities by concept (domain).
+type CapabilityGroup struct {
 	Domain  string
-	Choices []ExperienceChoice
+	Choices []CapabilityChoice
 }
 
 // WorkspaceOptions is the safe subset the workspace step exposes.
@@ -83,7 +92,7 @@ type UI interface {
 	Welcome() error
 	SelectRole(choices []RoleChoice, current string) (string, error)
 	SelectDesktop(choices []DesktopChoice, current string) (string, error)
-	SelectExperiences(groups []ExperienceGroup, current []string) ([]string, error)
+	SelectCapabilities(groups []CapabilityGroup, current []string) ([]string, error)
 	SelectWorkspace(opts WorkspaceOptions, current WorkspacePrefs) (WorkspacePrefs, error)
 	Review(info ReviewInfo) (ReviewDecision, error)
 	ShowReport(report string) error
@@ -100,13 +109,17 @@ type Wizard struct {
 }
 
 // LoadWizard loads the saved selection (or a fresh one) and prepares
-// the wizard.
+// the wizard. A saved v1 selection is upgraded to the capability
+// model; a fresh selection carries no capabilities yet.
 func LoadWizard(ui UI, in PlanInputs) (*Wizard, error) {
 	sel, err := Load()
 	if err != nil {
 		return nil, err
 	}
-	existing := sel.Profile != "" || len(sel.Experiences) > 0 || sel.Desktop != ""
+	existing := sel.Profile != "" || len(sel.Experiences) > 0 || len(sel.Capabilities) > 0 || sel.Desktop != ""
+	if err := sel.Derive(in.Resolver()); err != nil {
+		return nil, err
+	}
 	return &Wizard{UI: ui, Inputs: in, Selection: sel, Existing: existing}, nil
 }
 
@@ -189,8 +202,8 @@ func (w *Wizard) stepRole() error {
 			Name:        m.Name,
 			DisplayName: m.DisplayName,
 			Description: m.Description,
-			Recommended: experienceDisplays(w.Inputs.Catalog, m.Recommended),
-			Optional:    experienceDisplays(w.Inputs.Catalog, m.Optional),
+			Recommended: capabilityDisplays(w.Inputs, m.Recommended),
+			Optional:    capabilityDisplays(w.Inputs, m.Optional),
 			Applied:     m.Name == appliedProfile(),
 		})
 	}
@@ -203,10 +216,10 @@ func (w *Wizard) stepRole() error {
 	// Seed the capability selection with the profile recommendations
 	// only on a fresh wizard; afterwards the saved selection is the
 	// engineer's explicit customization and is never re-seeded.
-	if !w.Existing && len(w.Selection.Experiences) == 0 && chosen != "" {
-		rec, rerr := ProfileRecommendations(w.Inputs.Registry, w.Inputs.Catalog, chosen)
-		if rerr == nil {
-			w.Selection.Experiences = rec
+	if !w.Existing && len(w.Selection.Capabilities) == 0 && chosen != "" {
+		if seed, serr := SeedCapabilities(w.Inputs.Registry, w.Inputs.Capabilities, w.Inputs.Catalog, chosen); serr == nil {
+			w.Selection.Capabilities = seed
+			_ = w.Selection.Derive(w.Inputs.Resolver())
 		}
 	}
 	return nil
@@ -241,41 +254,56 @@ func (w *Wizard) stepDesktop() error {
 }
 
 func (w *Wizard) stepCapabilities() error {
-	entries, err := w.Inputs.Catalog.List()
+	names, err := w.Inputs.Capabilities.List()
 	if err != nil {
-		return fmt.Errorf("list experiences: %w", err)
+		return fmt.Errorf("list capabilities: %w", err)
 	}
-	byDomain := make(map[string][]ExperienceChoice)
-	var domains []string
+	res := w.Inputs.Resolver()
+	entries, lerr := w.Inputs.Catalog.List()
+	if lerr != nil {
+		return fmt.Errorf("list experiences: %w", lerr)
+	}
+	statusBy := make(map[string]experience.Status, len(entries))
 	for _, e := range entries {
-		if e.Type == experience.TypeDesktop || e.RPM == "" {
+		statusBy[e.Name] = e.Status
+	}
+	byDomain := make(map[string][]CapabilityChoice)
+	var domains []string
+	for _, n := range names {
+		m, lerr := w.Inputs.Capabilities.Load(n)
+		if lerr != nil {
 			continue
 		}
-		dom := Domain(e)
+		dom := m.Domain
 		if _, ok := byDomain[dom]; !ok {
 			domains = append(domains, dom)
 		}
-		byDomain[dom] = append(byDomain[dom], ExperienceChoice{
-			Name:        e.Name,
-			DisplayName: display(e.DisplayName, e.Name),
+		exps, _ := res.ExperiencesFor([]string{n})
+		byDomain[dom] = append(byDomain[dom], CapabilityChoice{
+			Name:        m.Name,
+			DisplayName: m.Name,
 			Domain:      dom,
-			Description: e.Description,
-			Status:      string(e.Status),
-			Recommended: recommendedBy(w.Selection.Profile, w.Inputs.Registry, e.Name),
+			Description: m.Description,
+			Status:      capabilityStatus(statusBy, exps),
+			Recommended: recommendedBy(w.Selection.Profile, w.Inputs.Registry, m.Name),
+			Required:    m.Name == capability.BaseName,
 		})
 	}
 	sort.Strings(domains)
-	groups := make([]ExperienceGroup, 0, len(domains))
+	groups := make([]CapabilityGroup, 0, len(domains))
 	for _, d := range domains {
 		choices := byDomain[d]
 		sort.Slice(choices, func(i, j int) bool { return choices[i].Name < choices[j].Name })
-		groups = append(groups, ExperienceGroup{Domain: d, Choices: choices})
+		groups = append(groups, CapabilityGroup{Domain: d, Choices: choices})
 	}
-	chosen, err := w.UI.SelectExperiences(groups, w.Selection.Experiences)
+	chosen, err := w.UI.SelectCapabilities(groups, w.Selection.Capabilities)
 	if err != nil {
 		return err
 	}
-	w.Selection.Experiences = chosen
+	w.Selection.Capabilities = chosen
+	if err := w.Selection.Derive(res); err != nil {
+		return fmt.Errorf("derive experiences: %w", err)
+	}
 	return nil
 }
 
@@ -321,11 +349,11 @@ func activeCompositor(in PlanInputs) string {
 	return ""
 }
 
-func experienceDisplays(cat *experience.Catalog, names []string) []string {
+func capabilityDisplays(in PlanInputs, names []string) []string {
 	var out []string
 	for _, n := range names {
-		if m, err := cat.Load(n); err == nil {
-			out = append(out, display(m.DisplayName, m.Name))
+		if m, err := in.Capabilities.Load(n); err == nil {
+			out = append(out, m.Name)
 		} else {
 			out = append(out, n)
 		}
@@ -333,7 +361,35 @@ func experienceDisplays(cat *experience.Catalog, names []string) []string {
 	return out
 }
 
-func recommendedBy(profileName string, reg *profile.Registry, experienceName string) bool {
+// capabilityStatus summarizes the install state of the experiences
+// implementing a capability: installed when all are installed,
+// planned when none is installable, available otherwise.
+func capabilityStatus(statusBy map[string]experience.Status, exps []string) string {
+	if len(exps) == 0 {
+		return "planned"
+	}
+	installed := 0
+	for _, e := range exps {
+		if statusBy[e] == experience.StatusInstalled {
+			installed++
+		}
+	}
+	switch {
+	case installed == len(exps):
+		return "installed"
+	case installed > 0:
+		return "available"
+	default:
+		for _, e := range exps {
+			if statusBy[e] == experience.StatusAvailable {
+				return "available"
+			}
+		}
+		return "planned"
+	}
+}
+
+func recommendedBy(profileName string, reg *profile.Registry, capabilityName string) bool {
 	if profileName == "" {
 		return false
 	}
@@ -342,7 +398,7 @@ func recommendedBy(profileName string, reg *profile.Registry, experienceName str
 		return false
 	}
 	for _, r := range m.Recommended {
-		if r == experienceName {
+		if r == capabilityName {
 			return true
 		}
 	}

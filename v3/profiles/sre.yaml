@@ -3,14 +3,17 @@ display_name: Site Reliability Engineer
 description: >-
   Keeps systems reliable: monitoring, incident response, and
   performance analysis. Observability tooling comes first, followed by
-  network diagnostics; terminal comfort is optional but common.
+  network and container diagnostics; cluster administration for the
+  systems under watch.
 role: sre
-recommended_experiences:
-  - base-ops
-  - observability-cli
-  - networking-tools
-optional_experiences:
-  - terminal-ops
+recommended_capabilities:
+  - networking
+  - observability
+  - containers
+  - kubernetes
+optional_capabilities:
+  - security
+  - terminal-operations
 tags:
   - reliability
   - monitoring

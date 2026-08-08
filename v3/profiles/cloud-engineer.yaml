@@ -5,11 +5,10 @@ description: >-
   connectivity, and deployment boundaries. Networking and a solid base
   come first; a comfortable terminal is a common extra.
 role: cloud-engineer
-recommended_experiences:
-  - base-ops
-  - networking-tools
-optional_experiences:
-  - terminal-ops
+recommended_capabilities:
+  - networking
+optional_capabilities:
+  - terminal-operations
 tags:
   - cloud
   - connectivity

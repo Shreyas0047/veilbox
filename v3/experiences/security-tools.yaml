@@ -1,0 +1,13 @@
+name: security-tools
+domain: Security
+description: >-
+  Security auditing toolkit: nmap for port and service discovery,
+  OpenSCAP for vulnerability and compliance scanning, and Lynis for
+  host hardening audits.
+capabilities:
+  - security
+rpm: veilbox-experience-security-tools
+packages:
+  - nmap
+  - openscap-scanner
+  - lynis

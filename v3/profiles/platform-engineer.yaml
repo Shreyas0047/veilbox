@@ -6,11 +6,13 @@ description: >-
   fluency; networking diagnostics on demand. Observability tooling may
   be added manually when needed.
 role: platform-engineer
-recommended_experiences:
-  - base-ops
-  - terminal-ops
-optional_experiences:
-  - networking-tools
+recommended_capabilities:
+  - terminal-operations
+  - containers
+  - kubernetes
+optional_capabilities:
+  - networking
+  - observability
 tags:
   - platform
   - tooling

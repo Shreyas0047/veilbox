@@ -3,6 +3,8 @@ domain: Networking
 description: >-
   Networking diagnostics toolkit for engineers: DNS query tools,
   traceroute, netcat, iproute2, and packet capture.
+capabilities:
+  - networking
 rpm: veilbox-experience-networking-tools
 packages:
   - bind-utils

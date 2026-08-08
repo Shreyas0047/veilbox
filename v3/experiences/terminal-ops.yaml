@@ -3,6 +3,8 @@ domain: Terminal Operations
 description: >-
   Terminal operations toolkit: terminal multiplexing, fast code and
   log search, and process inspection.
+capabilities:
+  - terminal-operations
 rpm: veilbox-experience-terminal-ops
 packages:
   - tmux

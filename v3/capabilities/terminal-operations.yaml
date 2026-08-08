@@ -1,0 +1,8 @@
+name: terminal-operations
+description: >-
+  Terminal fluency: tmux multiplexing, ripgrep for fast code and log
+  search, and htop for interactive process inspection.
+domain: Terminal Operations
+tier: tooling
+provides:
+  - terminal-operations

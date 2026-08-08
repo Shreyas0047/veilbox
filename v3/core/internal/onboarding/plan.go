@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 
+	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/desktop"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/profile"
@@ -133,10 +134,21 @@ func (p Plan) SystemActions() []string {
 // PlanInputs bundles the engines the plan builder reads. Everything is
 // read-only during planning.
 type PlanInputs struct {
-	Registry  *profile.Registry
-	Catalog   *experience.Catalog
-	Workspace *workspace.Engine
-	Desktop   *desktop.Engine
+	Registry     *profile.Registry
+	Catalog      *experience.Catalog
+	Capabilities *capability.Registry
+	Workspace    *workspace.Engine
+	Desktop      *desktop.Engine
+}
+
+// Resolver returns the capability→experience mapping resolver over
+// the inputs' registries.
+func (in PlanInputs) Resolver() *capability.Resolver {
+	res, err := capability.NewResolver(in.Capabilities, in.Catalog)
+	if err != nil {
+		return nil
+	}
+	return res
 }
 
 // BuildPlan computes the complete delta between the selection and the
@@ -146,7 +158,7 @@ func BuildPlan(sel Selection, in PlanInputs) (*Plan, error) {
 		Experiences: []ExperienceItem{},
 		Desktop:     DesktopAction{Action: ActionNone},
 	}
-	plan.Problems = append(plan.Problems, sel.Problems(in.Registry, in.Catalog)...)
+	plan.Problems = append(plan.Problems, sel.Problems(in.Registry, in.Capabilities, in.Catalog)...)
 
 	// Profile.
 	if sel.Profile != "" {
@@ -296,6 +308,14 @@ func RenderPlan(w io.Writer, p Plan, sel Selection) {
 		default:
 			fmt.Fprintln(w, "  (will be installed and activated)")
 		}
+	}
+
+	fmt.Fprintln(w, "CAPABILITIES")
+	if len(sel.Capabilities) == 0 {
+		fmt.Fprintln(w, "  (none selected)")
+	}
+	for _, c := range sel.Capabilities {
+		fmt.Fprintf(w, "  [x] %s\n", c)
 	}
 
 	fmt.Fprintln(w, "EXPERIENCES")

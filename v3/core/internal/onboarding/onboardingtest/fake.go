@@ -43,6 +43,8 @@ const TestToolYAML = `name: networking-tools
 display_name: Networking Tools
 description: Networking diagnostics.
 rpm: veilbox-experience-networking-tools
+capabilities:
+  - networking
 packages:
   - bind-utils
 `
@@ -52,15 +54,31 @@ const TestProfileYAML = `name: cloud-engineer
 display_name: Cloud Engineer
 description: Works with cloud infrastructure.
 role: cloud-engineer
-recommended_experiences:
-  - networking-tools
-optional_experiences: []
+recommended_capabilities:
+  - networking
+optional_capabilities: []
 workspace_preferences:
   shell: bash
   editor: vim
   terminal: system
   prompt: veilbox
   tmux: false
+`
+
+// TestCapabilityYAMLs are the capability manifests the test
+// environment ships, mirroring the real catalog.
+const TestCapabilityYAMLs = `name: base-operations
+domain: fundamentals
+tier: core
+description: Essential system operations.
+`
+
+// TestNetworkingCapabilityYAML mirrors the networking capability used
+// by the test profile and experience.
+const TestNetworkingCapabilityYAML = `name: networking
+domain: networking
+tier: core
+description: Network diagnostics.
 `
 
 // Runner is a command runner whose DNF/rpm behavior mirrors a real
@@ -149,6 +167,7 @@ func (f *Runner) Joined() []string {
 type Env struct {
 	Root    string
 	CatDir  string
+	CapDir  string
 	ProfDir string
 }
 
@@ -193,6 +212,19 @@ func SetupEnv(t *testing.T) Env {
 		}
 	}
 
+	capDir := filepath.Join(root, "capabilities")
+	if err := os.MkdirAll(capDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{
+		"base-operations.yaml": TestCapabilityYAMLs,
+		"networking.yaml":      TestNetworkingCapabilityYAML,
+	} {
+		if err := os.WriteFile(filepath.Join(capDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	profDir := filepath.Join(root, "profiles")
 	if err := os.MkdirAll(profDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -215,5 +247,5 @@ func SetupEnv(t *testing.T) Env {
 		}
 	}
 
-	return Env{Root: root, CatDir: catDir, ProfDir: profDir}
+	return Env{Root: root, CatDir: catDir, CapDir: capDir, ProfDir: profDir}
 }

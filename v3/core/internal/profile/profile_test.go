@@ -10,12 +10,12 @@ const devopsYAML = `name: devops
 display_name: DevOps Engineer
 description: Builds and operates delivery pipelines.
 role: devops
-recommended_experiences:
-  - base-ops
-  - networking-tools
-  - terminal-ops
-optional_experiences:
-  - observability-cli
+recommended_capabilities:
+  - base-operations
+  - networking
+  - terminal-operations
+optional_capabilities:
+  - observability
 tags: [ci, delivery, operations]
 workspace_preferences:
   shell: bash
@@ -40,10 +40,10 @@ func TestLoad(t *testing.T) {
 	if m.Name != "devops" || m.DisplayName != "DevOps Engineer" || m.Description == "" {
 		t.Fatalf("bad manifest: %+v", m)
 	}
-	if len(m.Recommended) != 3 || m.Recommended[0] != "base-ops" {
+	if len(m.Recommended) != 3 || m.Recommended[0] != "base-operations" {
 		t.Fatalf("bad recommended: %+v", m.Recommended)
 	}
-	if len(m.Optional) != 1 || m.Optional[0] != "observability-cli" {
+	if len(m.Optional) != 1 || m.Optional[0] != "observability" {
 		t.Fatalf("bad optional: %+v", m.Optional)
 	}
 	if len(m.Tags) != 3 || m.Workspace.Shell != "bash" || m.Workspace.Editor != "vim" {
@@ -71,7 +71,7 @@ func TestAllReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := m.AllReferences()
-	if len(got) != 4 || got[0] != "base-ops" || got[3] != "terminal-ops" {
+	if len(got) != 4 || got[0] != "base-operations" || got[3] != "terminal-operations" {
 		t.Fatalf("references: %v", got)
 	}
 }
@@ -106,8 +106,8 @@ func TestLoadValidation(t *testing.T) {
 	}{
 		{"missing description", "name: devops\n"},
 		{"bad name chars", "name: Dev Ops\ndescription: x\n"},
-		{"duplicate recommended", "name: devops\ndescription: x\nrecommended_experiences: [a, a]\n"},
-		{"bad reference", "name: devops\ndescription: x\nrecommended_experiences: [a b]\n"},
+		{"duplicate recommended", "name: devops\ndescription: x\nrecommended_capabilities: [a, a]\n"},
+		{"bad reference", "name: devops\ndescription: x\nrecommended_capabilities: [a b]\n"},
 		{"invalid filename", "name: ../evil\ndescription: x\n"},
 	}
 	for _, tc := range cases {

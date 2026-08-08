@@ -7,7 +7,7 @@
 
 Name:           veilbox-core
 Version:        %{go_version}
-Release:        7%{?dist}
+Release:        8%{?dist}
 Summary:        Veilbox Core — Operations Platform for engineers
 
 License:        GPL-2.0-only
@@ -24,6 +24,7 @@ Veilbox manages the engineer.
 Veilbox Core provides the veil CLI:
 
   - veil profile / list / show / apply / diff / sync — engineer intent
+  - veil capability list / info — intent concepts (ADR-0011)
   - veil experience list / info / install / remove — capability modules
   - veil desktop list / info / install / remove / provision — complete
     desktop experiences (compositor + shell + defaults, not bare
@@ -31,9 +32,13 @@ Veilbox Core provides the veil CLI:
     responsibilities — only 'veil desktop install' enables the display
     manager and switches the boot target
   - veil workspace / plan / apply / status / reset — user workspace
+  - veil onboard — the wizard: role, desktop, capabilities, workspace
   - veil status — Veilbox and system state (profile sync included)
   - veil doctor — system, profile, and package consistency checks
 
+Profiles recommend capabilities (ADR-0011); the Experience Engine
+derives the experiences that implement them and resolves them to RPMs.
+Capability manifests ship under /usr/share/veilbox/capabilities/.
 Profiles are intent and state, never RPMs. Experiences are delivered
 as RPM meta-packages installed through DNF. Workspace configuration is
 generated under ~/.config/veilbox/workspace and integrated into user
@@ -64,6 +69,9 @@ done
 for f in experiences/*.yaml; do
     install -Dpm644 "$f" "%{buildroot}%{_datadir}/veilbox/experiences/$(basename "$f")"
 done
+for f in capabilities/*.yaml; do
+    install -Dpm644 "$f" "%{buildroot}%{_datadir}/veilbox/capabilities/$(basename "$f")"
+done
 
 %files
 %license LICENSE
@@ -71,10 +79,21 @@ done
 %dir %{_datadir}/veilbox
 %dir %{_datadir}/veilbox/profiles
 %dir %{_datadir}/veilbox/experiences
+%dir %{_datadir}/veilbox/capabilities
 %{_datadir}/veilbox/profiles/*.yaml
 %{_datadir}/veilbox/experiences/*.yaml
+%{_datadir}/veilbox/capabilities/*.yaml
 
 %changelog
+* Sat Aug 08 2026 Veilbox v3 — 0.1.0-8
+- Capability layer (ADR-0011): capability manifests ship under
+  /usr/share/veilbox/capabilities/, profiles recommend capabilities
+  instead of experiences, the wizard selects capabilities, and the
+  Experience Engine derives experiences from them. Ships three new
+  experiences (containers-tools, kubernetes-tools, security-tools).
+  Onboarding schema v2 (capabilities axis) with v1 backfill; veil
+  capability list/info commands; capability consistency checks in
+  doctor.
 * Fri Aug 07 2026 Veilbox v3 — 0.1.0-7
 - doctor templates check resolves the RPM-owned desktop template
   directory via the engine (matches provision/install discovery).

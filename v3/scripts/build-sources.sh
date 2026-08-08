@@ -19,9 +19,11 @@ cp -r core/vendor "${STAGE}/vendor"
 cp -r core/cmd/. "${STAGE}/cmd/"
 cp -r core/internal/. "${STAGE}/internal/"
 
-# Shipped data (profiles = intent, experiences = capability catalog).
+# Shipped data (profiles = intent, experiences = capability catalog,
+# capabilities = capability manifests).
 cp -r profiles "${STAGE}/profiles"
 cp -r experiences "${STAGE}/experiences"
+cp -r capabilities "${STAGE}/capabilities"
 
 # License for %license.
 cp LICENSE "${STAGE}/LICENSE"

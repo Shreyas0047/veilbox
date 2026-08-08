@@ -1,0 +1,9 @@
+name: security
+description: >-
+  Security tooling: port and service scanning with nmap, SCAP
+  vulnerability and compliance scanning with OpenSCAP, and host
+  hardening audits with Lynis.
+domain: Security
+tier: tooling
+provides:
+  - security

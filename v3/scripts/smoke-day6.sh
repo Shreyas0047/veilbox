@@ -82,7 +82,7 @@ STEPS = {
         (b'Press Enter to begin', b'\r'),       # welcome
         (b'Step 1/5', b'\r'),                   # role
         (b'Step 2/5', b'\r'),                   # desktop
-        (b'Step 3/5', b'jjjj\r'),               # capabilities: Done
+        (b'Step 3/5', b'jjjjjjj\r'),            # capabilities: 7 rows, Done
         (b'Step 4/5', b'\r\rj\r\rj\rj\rj\r'),   # workspace: Continue
         (b'Step 5/5', b'q'),                    # review: abort
     ],
@@ -138,10 +138,11 @@ PYEOF
 
 # --- line UI helper (piped run falls back to the line UI) -------------
 line_abort() {
-    # Eleven empty lines keep every saved value (role, desktop, four
-    # capability groups, four workspace fields), then q aborts at the
-    # review prompt.
-    printf '\n\n\n\n\n\n\n\n\n\n\nq\n' | veil onboard 2>&1
+    # Twelve empty lines keep every saved value (role, desktop, six
+    # capability groups — the required-only Base Operations group is
+    # skipped — four workspace fields), then q aborts at the review
+    # prompt.
+    printf '\n\n\n\n\n\n\n\n\n\n\n\nq\n' | veil onboard 2>&1
 }
 
 # --- 1. --yes stays non-interactive -----------------------------------

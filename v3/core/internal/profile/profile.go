@@ -1,16 +1,18 @@
 // Package profile implements the Profile Engine.
 //
 // A profile declares engineer intent: who the engineer is (role), what
-// they likely need (recommended experiences), what they might want
-// (optional experiences), and workspace preferences. Profiles are
+// they likely need (recommended capabilities), what they might want
+// (optional capabilities), and workspace preferences. Capabilities are
+// concepts (see the capability package); experiences implement them
+// and are derived by the capability mapping. Profiles are
 // configuration — YAML manifests shipped by veilbox-core and state
 // persisted by Veilbox. Profiles are never represented as RPMs and
-// never install packages directly; capability implementation belongs
-// to experiences (see ADR-0001).
+// never install packages directly (ADR-0001, ADR-0011).
 //
 // The profile is a desired baseline, not an enforced prison: applying
 // or syncing a profile never removes experiences the engineer chose
-// manually (see ADR-0004).
+// manually (see ADR-0004). Profiles never declare an environment:
+// role and environment are independent axes (ADR-0013).
 package profile
 
 import (
@@ -28,30 +30,32 @@ import (
 	"github.com/Shreyas0047/veilbox/v3/core/internal/workspace"
 )
 
-// namePattern matches manifest names and experience references:
+// namePattern matches manifest names and capability references:
 // lowercase letters, digits, and hyphens.
 var namePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // Manifest is a profile definition file (profiles/<name>.yaml).
 //
-// DisplayName and Role are presentation metadata; Recommended and
-// Optional are the intent: experience catalog entries the engineer
-// likely needs (recommended) or may want (optional). Workspace holds
-// the preferences the Workspace Engine translates into user-level
+// DisplayName and Role are presentation metadata; RecommendedCaps and
+// OptionalCaps are the intent: capability concepts the engineer likely
+// needs (recommended) or may want (optional). Profiles never declare
+// experiences directly — the capability mapping derives them — and
+// never declare an environment (ADR-0013). Workspace holds the
+// preferences the Workspace Engine translates into user-level
 // workspace configuration.
 type Manifest struct {
 	Name        string                `yaml:"name"`
 	DisplayName string                `yaml:"display_name,omitempty"`
 	Description string                `yaml:"description"`
 	Role        string                `yaml:"role,omitempty"`
-	Recommended []string              `yaml:"recommended_experiences,omitempty"`
-	Optional    []string              `yaml:"optional_experiences,omitempty"`
+	Recommended []string              `yaml:"recommended_capabilities,omitempty"`
+	Optional    []string              `yaml:"optional_capabilities,omitempty"`
 	Tags        []string              `yaml:"tags,omitempty"`
 	Workspace   workspace.Preferences `yaml:"workspace_preferences,omitempty"`
 }
 
 // AllReferences returns the sorted union of recommended and optional
-// experience names referenced by the manifest.
+// capability names referenced by the manifest.
 func (m Manifest) AllReferences() []string {
 	seen := make(map[string]bool, len(m.Recommended)+len(m.Optional))
 	for _, e := range m.Recommended {
@@ -69,8 +73,9 @@ func (m Manifest) AllReferences() []string {
 }
 
 // Validate checks the manifest structurally: naming, required fields,
-// and duplicate-free reference lists. It does not verify that
-// referenced experiences exist in the catalog (see CheckReferences).
+// and duplicate-free capability reference lists. It does not verify
+// that referenced capabilities exist in the registry (see
+// CheckCapabilities).
 func (m Manifest) Validate() error {
 	if !namePattern.MatchString(m.Name) {
 		return fmt.Errorf("invalid profile name %q (want lowercase letters, digits, hyphens)", m.Name)
@@ -82,10 +87,10 @@ func (m Manifest) Validate() error {
 		seen := make(map[string]bool, len(list))
 		for _, e := range list {
 			if !namePattern.MatchString(e) {
-				return fmt.Errorf("profile %q: invalid experience reference %q", m.Name, e)
+				return fmt.Errorf("profile %q: invalid capability reference %q", m.Name, e)
 			}
 			if seen[e] {
-				return fmt.Errorf("profile %q: duplicate experience reference %q", m.Name, e)
+				return fmt.Errorf("profile %q: duplicate capability reference %q", m.Name, e)
 			}
 			seen[e] = true
 		}

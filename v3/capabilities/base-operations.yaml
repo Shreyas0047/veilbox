@@ -1,0 +1,9 @@
+name: base-operations
+description: >-
+  The universal engineering base: version control, an editor, transfer
+  and debugging tools every Veilbox role starts from. Always included
+  in every composition.
+domain: Base Operations
+tier: core
+provides:
+  - base-operations

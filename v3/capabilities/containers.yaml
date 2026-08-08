@@ -1,0 +1,8 @@
+name: containers
+description: >-
+  Container workflows: building, pushing and running OCI containers
+  with Podman, Skopeo and Buildah — rootless by default.
+domain: Containers
+tier: core
+provides:
+  - containers

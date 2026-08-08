@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Shreyas0047/veilbox/v3/core/cmd/veil/tui"
+	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/onboarding"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/profile"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/workspace"
@@ -38,10 +39,11 @@ func cmdOnboard(args []string, stdout, stderr io.Writer, d deps) int {
 	}
 
 	inputs := onboarding.PlanInputs{
-		Registry:  profile.NewRegistry(),
-		Catalog:   d.catalog(),
-		Workspace: workspace.NewEngine(),
-		Desktop:   d.desktopEngine(),
+		Registry:     profile.NewRegistry(),
+		Catalog:      d.catalog(),
+		Capabilities: capability.NewRegistry(),
+		Workspace:    workspace.NewEngine(),
+		Desktop:      d.desktopEngine(),
 	}
 
 	if *yes {
@@ -114,7 +116,7 @@ func onboardYes(stdout, stderr io.Writer, inputs onboarding.PlanInputs) int {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
 		return 1
 	}
-	fresh := sel.Profile == "" && sel.Desktop == "" && len(sel.Experiences) == 0
+	fresh := sel.Profile == "" && sel.Desktop == "" && len(sel.Experiences) == 0 && len(sel.Capabilities) == 0
 	if fresh {
 		names, lerr := inputs.Registry.List()
 		if lerr != nil {
@@ -127,16 +129,24 @@ func onboardYes(stdout, stderr io.Writer, inputs onboarding.PlanInputs) int {
 		}
 		sort.Strings(names)
 		sel.Profile = names[0]
-		if rec, rerr := onboarding.ProfileRecommendations(inputs.Registry, inputs.Catalog, sel.Profile); rerr == nil {
-			sel.Experiences = rec
+		if seed, serr := onboarding.SeedCapabilities(inputs.Registry, inputs.Capabilities, inputs.Catalog, sel.Profile); serr == nil {
+			sel.Capabilities = seed
+		}
+		if err := sel.Derive(inputs.Resolver()); err != nil {
+			fmt.Fprintf(stderr, "veil: %v\n", err)
+			return 1
 		}
 		if err := sel.Save(); err != nil {
 			fmt.Fprintf(stderr, "veil: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(stdout, "First run: defaulting to profile %q with its recommended experiences.\n", sel.Profile)
+		fmt.Fprintf(stdout, "First run: defaulting to profile %q with its recommended capabilities.\n", sel.Profile)
 	} else {
 		fmt.Fprintln(stdout, "Applying your saved selection.")
+		if err := sel.Derive(inputs.Resolver()); err != nil {
+			fmt.Fprintf(stderr, "veil: %v\n", err)
+			return 1
+		}
 	}
 	res, aerr := onboarding.Apply(sel, inputs)
 	fmt.Fprint(stdout, onboarding.RenderReport(res, aerr))
@@ -251,7 +261,7 @@ func (u *lineUI) SelectDesktop(choices []onboarding.DesktopChoice, current strin
 	return names[n], nil
 }
 
-func (u *lineUI) SelectExperiences(groups []onboarding.ExperienceGroup, current []string) ([]string, error) {
+func (u *lineUI) SelectCapabilities(groups []onboarding.CapabilityGroup, current []string) ([]string, error) {
 	selected := map[string]bool{}
 	for _, c := range current {
 		selected[c] = true
@@ -263,6 +273,7 @@ func (u *lineUI) SelectExperiences(groups []onboarding.ExperienceGroup, current 
 			continue
 		}
 		fmt.Fprintf(u.out, "\n[%s]\n", g.Domain)
+		requiredOnly := true
 		for i, c := range g.Choices {
 			recommend := " "
 			if c.Recommended {
@@ -276,7 +287,17 @@ func (u *lineUI) SelectExperiences(groups []onboarding.ExperienceGroup, current 
 			if c.Status != "" {
 				status = " [" + c.Status + "]"
 			}
+			if c.Required {
+				selected[c.Name] = true
+				fmt.Fprintf(u.out, "%s %s %d. %s — %s (required, always included)%s\n", mark, recommend, i, c.DisplayName, c.Description, status)
+				continue
+			}
+			requiredOnly = false
 			fmt.Fprintf(u.out, "%s %s %d. %s — %s%s\n", mark, recommend, i, c.DisplayName, c.Description, status)
+		}
+		if requiredOnly {
+			fmt.Fprintln(u.out, "  (all capabilities in this group are required)")
+			continue
 		}
 		line, err := u.read(fmt.Sprintf("Toggle for %s: ", g.Domain))
 		if err != nil {
@@ -286,11 +307,15 @@ func (u *lineUI) SelectExperiences(groups []onboarding.ExperienceGroup, current 
 		case line == "":
 		case strings.EqualFold(line, "a"):
 			for _, c := range g.Choices {
-				selected[c.Name] = true
+				if !c.Required {
+					selected[c.Name] = true
+				}
 			}
 		case strings.EqualFold(line, "n"):
 			for _, c := range g.Choices {
-				selected[c.Name] = false
+				if !c.Required {
+					selected[c.Name] = false
+				}
 			}
 		default:
 			for _, part := range strings.Split(line, ",") {
@@ -298,8 +323,10 @@ func (u *lineUI) SelectExperiences(groups []onboarding.ExperienceGroup, current 
 				if cerr != nil || n < 0 || n >= len(g.Choices) {
 					continue
 				}
-				name := g.Choices[n].Name
-				selected[name] = !selected[name]
+				c := g.Choices[n]
+				if !c.Required {
+					selected[c.Name] = !selected[c.Name]
+				}
 			}
 		}
 	}

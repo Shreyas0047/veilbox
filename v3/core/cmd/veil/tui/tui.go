@@ -136,8 +136,8 @@ func (u *UI) SelectDesktop(choices []onboarding.DesktopChoice, current string) (
 	return m.value, nil
 }
 
-// SelectExperiences implements onboarding.UI.
-func (u *UI) SelectExperiences(groups []onboarding.ExperienceGroup, current []string) ([]string, error) {
+// SelectCapabilities implements onboarding.UI.
+func (u *UI) SelectCapabilities(groups []onboarding.CapabilityGroup, current []string) ([]string, error) {
 	step := u.nextStep()
 	m := newMultiModel(step)
 	m.selected = make(map[string]bool)
@@ -153,7 +153,11 @@ func (u *UI) SelectExperiences(groups []onboarding.ExperienceGroup, current []st
 				detail: c.Description,
 				status: c.Status,
 				rec:    c.Recommended,
+				locked: c.Required,
 			})
+			if c.Required {
+				m.selected[c.Name] = true
+			}
 		}
 	}
 	m.items = append(m.items, multiItem{done: true, label: "Done"})

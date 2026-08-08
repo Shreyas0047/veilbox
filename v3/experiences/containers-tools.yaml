@@ -1,0 +1,13 @@
+name: containers-tools
+domain: Containers
+description: >-
+  Container workflows for engineers: build and push OCI images with
+  Podman and Buildah, and inspect, copy and verify images and
+  registries with Skopeo — all rootless by default.
+capabilities:
+  - containers
+rpm: veilbox-experience-containers-tools
+packages:
+  - podman
+  - buildah
+  - skopeo

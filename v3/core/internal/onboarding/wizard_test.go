@@ -5,15 +5,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
 )
 
 // scriptedUI is a fake UI driven by queued answers.
 type scriptedUI struct {
-	role        string
-	desktop     string
-	experiences func(current []string) []string
-	workspace   WorkspacePrefs
-	decisions   []ReviewDecision
+	role         string
+	desktop      string
+	capabilities func(current []string) []string
+	workspace    WorkspacePrefs
+	decisions    []ReviewDecision
 
 	roleCalls   int
 	reviewCalls int
@@ -44,10 +46,10 @@ func (u *scriptedUI) SelectDesktop(choices []DesktopChoice, current string) (str
 	return current, nil
 }
 
-func (u *scriptedUI) SelectExperiences(groups []ExperienceGroup, current []string) ([]string, error) {
+func (u *scriptedUI) SelectCapabilities(groups []CapabilityGroup, current []string) ([]string, error) {
 	u.seeded = append([]string{}, current...)
-	if u.experiences != nil {
-		return u.experiences(current), nil
+	if u.capabilities != nil {
+		return u.capabilities(current), nil
 	}
 	return current, nil
 }
@@ -76,8 +78,10 @@ func (u *scriptedUI) ShowReport(report string) error {
 
 func addTerminalOps(t *testing.T, root string) {
 	t.Helper()
+	os.WriteFile(filepath.Join(root, "capabilities", "terminal-operations.yaml"), []byte(
+		"name: terminal-operations\ndomain: terminal\ntier: core\ndescription: Terminal improvements.\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "experiences", "terminal-ops.yaml"), []byte(
-		"name: terminal-ops\ndescription: Terminal improvements.\nrpm: veilbox-experience-terminal-ops\npackages:\n  - tmux\n"), 0o644)
+		"name: terminal-ops\ndescription: Terminal improvements.\nrpm: veilbox-experience-terminal-ops\ncapabilities:\n  - terminal-operations\npackages:\n  - tmux\n"), 0o644)
 }
 
 func TestWizardFullRun(t *testing.T) {
@@ -101,9 +105,16 @@ func TestWizardFullRun(t *testing.T) {
 	if sel.Profile != "cloud-engineer" || sel.Desktop != "niri-desktop" {
 		t.Fatalf("selection wrong: %+v", sel)
 	}
-	// Fresh run must seed from the profile recommendations.
+	// Fresh run must seed from the profile's recommended capabilities
+	// plus the implicit base capability.
+	if !contains(sel.Capabilities, "networking") {
+		t.Fatalf("recommendations not seeded: %v", sel.Capabilities)
+	}
+	if !contains(sel.Capabilities, capability.BaseName) {
+		t.Fatalf("base capability not seeded: %v", sel.Capabilities)
+	}
 	if !contains(sel.Experiences, "networking-tools") {
-		t.Fatalf("recommendations not seeded: %v", sel.Experiences)
+		t.Fatalf("capabilities not derived into experiences: %v", sel.Experiences)
 	}
 	if ui.report == "" || !strings.Contains(ui.report, "APPLY RESULT") {
 		t.Fatalf("report not shown: %q", ui.report)
@@ -201,8 +212,8 @@ func TestWizardAltersOneCapability(t *testing.T) {
 	addTerminalOps(t, os.Getenv("VEILBOX_ROOT"))
 
 	// Prior run: networking-tools installed, terminal-ops selected but
-	// not yet installed. The engineer now removes networking-tools
-	// from the selection — everything else stays.
+	// not yet installed. The engineer now removes the networking
+	// capability from the selection — everything else stays.
 	f.Installed("veilbox-experience-networking-tools")
 	prev := Selection{
 		SchemaVersion: SchemaVersion,
@@ -217,11 +228,11 @@ func TestWizardAltersOneCapability(t *testing.T) {
 		role:      "cloud-engineer",
 		desktop:   "",
 		workspace: WorkspacePrefs{Editor: "vim", Prompt: "veilbox", Terminal: "system"},
-		experiences: func(current []string) []string {
-			// Alter exactly one capability: drop networking-tools.
+		capabilities: func(current []string) []string {
+			// Alter exactly one capability: drop networking.
 			var out []string
 			for _, c := range current {
-				if c != "networking-tools" {
+				if c != "networking" {
 					out = append(out, c)
 				}
 			}
@@ -243,7 +254,11 @@ func TestWizardAltersOneCapability(t *testing.T) {
 	if res == nil || !res.Success {
 		t.Fatalf("apply: %+v", res)
 	}
-	// One capability altered, the other kept.
+	// One capability altered: networking dropped, terminal-operations
+	// kept and derived into the terminal-ops experience.
+	if contains(sel.Capabilities, "networking") {
+		t.Fatalf("networking must be dropped: %v", sel.Capabilities)
+	}
 	if len(sel.Experiences) != 1 || sel.Experiences[0] != "terminal-ops" {
 		t.Fatalf("altered selection wrong: %v", sel.Experiences)
 	}
@@ -274,8 +289,8 @@ func TestWizardRoleChangeKeepsCustomization(t *testing.T) {
 	ui := &scriptedUI{
 		role:      "cloud-engineer",
 		workspace: WorkspacePrefs{Editor: "vim", Prompt: "veilbox", Terminal: "system"},
-		experiences: func(current []string) []string {
-			if contains(current, "networking-tools") {
+		capabilities: func(current []string) []string {
+			if contains(current, "networking") {
 				t.Fatal("role change must not reseed profile recommendations")
 			}
 			return current

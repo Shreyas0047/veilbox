@@ -5,12 +5,12 @@ description: >-
   deployment automation, and infrastructure as code. Needs solid
   terminal and networking foundations to diagnose failures quickly.
 role: devops
-recommended_experiences:
-  - base-ops
-  - networking-tools
-  - terminal-ops
-optional_experiences:
-  - observability-cli
+recommended_capabilities:
+  - networking
+  - terminal-operations
+optional_capabilities:
+  - observability
+  - containers
 tags:
   - ci
   - delivery

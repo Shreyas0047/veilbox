@@ -191,8 +191,8 @@ func (m pickModel) View() string {
 }
 
 // multiItem is one row in the capability list: either a group header
-// (not selectable), a toggleable capability, or the trailing Done
-// item.
+// (not selectable), a toggleable capability, the trailing Done item,
+// or a locked (required) capability that is always selected.
 type multiItem struct {
 	header string // group title when set
 	done   bool   // trailing "Done" item
@@ -201,6 +201,7 @@ type multiItem struct {
 	detail string
 	status string
 	rec    bool
+	locked bool
 }
 
 // multiModel is the capabilities screen: grouped, multi-select with
@@ -232,7 +233,7 @@ func (m multiModel) selectable(i int) bool {
 		return false
 	}
 	it := m.items[i]
-	return it.header == "" && !it.done
+	return it.header == "" && !it.done && !it.locked
 }
 
 // moveSkips advances the cursor past group headers.
@@ -278,7 +279,7 @@ func (m multiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case it.done:
 				return m, tea.Quit
-			case it.value != "":
+			case it.value != "" && !it.locked:
 				m.selected[it.value] = !m.selected[it.value]
 			}
 			return m, nil
@@ -320,7 +321,8 @@ func (m multiModel) View() string {
 	var b strings.Builder
 	b.WriteString(m.header())
 	b.WriteString("Selected capabilities are marked with [x]. Recommended\n")
-	b.WriteString("experiences are marked [r].\n")
+	b.WriteString("capabilities are marked [r]. Required capabilities are\n")
+	b.WriteString("always included and cannot be toggled.\n")
 	height := m.viewHeight()
 	end := m.offset + height
 	if end > len(m.items) {
@@ -341,6 +343,25 @@ func (m multiModel) View() string {
 			b.WriteString(marker)
 			b.WriteString(it.label)
 			b.WriteString("\n")
+		case it.locked:
+			marker := "  "
+			if i == m.cursor {
+				marker = "› "
+			}
+			b.WriteString(marker)
+			b.WriteString("[x] required ")
+			b.WriteString(it.label)
+			if it.status != "" {
+				b.WriteString("  [")
+				b.WriteString(it.status)
+				b.WriteString("]")
+			}
+			b.WriteString("\n")
+			if i == m.cursor && it.detail != "" {
+				b.WriteString("     ")
+				b.WriteString(it.detail)
+				b.WriteString("\n")
+			}
 		default:
 			marker := "  "
 			if i == m.cursor {

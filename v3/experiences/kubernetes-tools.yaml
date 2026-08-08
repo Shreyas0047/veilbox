@@ -1,0 +1,13 @@
+name: kubernetes-tools
+domain: Kubernetes
+description: >-
+  Kubernetes operations toolkit: kubectl for cluster administration,
+  Helm for release management, and k9s for fast interactive cluster
+  navigation.
+capabilities:
+  - kubernetes
+rpm: veilbox-experience-kubernetes-tools
+packages:
+  - kubernetes1.36-client
+  - helm
+  - k9s

@@ -3,6 +3,8 @@ domain: Observability
 description: >-
   Observability command-line toolkit: system performance metrics,
   I/O monitoring, and JSON querying for logs and APIs.
+capabilities:
+  - observability
 rpm: veilbox-experience-observability-cli
 packages:
   - sysstat

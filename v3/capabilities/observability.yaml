@@ -1,0 +1,8 @@
+name: observability
+description: >-
+  Observability from the terminal: system performance metrics, I/O
+  monitoring and JSON querying for logs and APIs.
+domain: Observability
+tier: core
+provides:
+  - observability

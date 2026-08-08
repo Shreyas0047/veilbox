@@ -28,6 +28,13 @@ type ApplyResult struct {
 // what succeeded and what failed, and returns the ledgers for the
 // caller to report with recovery guidance.
 func Apply(sel Selection, in PlanInputs) (*ApplyResult, error) {
+	// Normalize to the capability model first: a capability selection
+	// has no stored experience list yet (or carries a stale one), so
+	// derive the experiences now. After this, the whole apply, verify
+	// and persist pipeline runs on the derived list (ADR-0011).
+	if err := sel.Derive(in.Resolver()); err != nil {
+		return nil, err
+	}
 	plan, err := BuildPlan(sel, in)
 	if err != nil {
 		return nil, err
@@ -140,7 +147,7 @@ func failApply(sel Selection, log *ApplyLog, res *ApplyResult, record func(strin
 // inconsistencies between the selection and what is actually applied.
 // It never changes anything.
 func Verify(sel Selection, in PlanInputs) error {
-	problems := sel.Problems(in.Registry, in.Catalog)
+	problems := sel.Problems(in.Registry, in.Capabilities, in.Catalog)
 	if len(problems) > 0 {
 		return fmt.Errorf("selection references invalid objects: %s", strings.Join(problems, "; "))
 	}

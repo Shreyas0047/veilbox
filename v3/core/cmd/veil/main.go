@@ -13,6 +13,8 @@
 //	veil profile apply <name>
 //	veil profile diff <name>
 //	veil profile sync [--yes]
+//	veil capability list
+//	veil capability info <name>
 //	veil experience list
 //	veil experience info <name>
 //	veil experience install <name>
@@ -36,6 +38,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/desktop"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
@@ -59,6 +62,8 @@ Commands:
   profile apply <name>    Apply an engineer profile (intent, no packages)
   profile diff <name>     Compare machine state with a profile's intent
   profile sync [--yes]    Install missing recommended experiences
+  capability list         List known capabilities (intent concepts)
+  capability info <name>  Show a capability and its implementing experiences
   experience list         List known experiences and their status
   experience info <name>  Show details about an experience
   experience install <name>  Install an experience through DNF
@@ -91,9 +96,10 @@ func main() {
 
 // deps allows tests to substitute engines without touching the system.
 type deps struct {
-	newCatalog func() *experience.Catalog
-	newDNF     func() *dnfops.System
-	newDesktop func(c *experience.Catalog) *desktop.Engine
+	newCatalog      func() *experience.Catalog
+	newDNF          func() *dnfops.System
+	newDesktop      func(c *experience.Catalog) *desktop.Engine
+	newCapabilities func() *capability.Registry
 }
 
 func (d deps) catalog() *experience.Catalog {
@@ -101,6 +107,13 @@ func (d deps) catalog() *experience.Catalog {
 		return d.newCatalog()
 	}
 	return experience.NewCatalog()
+}
+
+func (d deps) capabilities() *capability.Registry {
+	if d.newCapabilities != nil {
+		return d.newCapabilities()
+	}
+	return capability.NewRegistry()
 }
 
 func (d deps) dnf() *dnfops.System {
@@ -131,6 +144,8 @@ func run(args []string, stdout, stderr io.Writer, d deps) int {
 		return 0
 	case "profile":
 		return cmdProfile(args[1:], stdout, stderr, d)
+	case "capability":
+		return cmdCapability(args[1:], stdout, stderr, d)
 	case "experience":
 		return cmdExperience(args[1:], stdout, stderr, d)
 	case "desktop":
@@ -236,8 +251,14 @@ func profileShow(name string, stdout, stderr io.Writer, d deps) int {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
 		return 1
 	}
+	catalog := d.catalog()
+	res, rerr := capability.NewResolver(d.capabilities(), catalog)
+	if rerr != nil {
+		fmt.Fprintf(stderr, "veil: %v\n", rerr)
+		return 1
+	}
 	statuses := map[string]string{}
-	if entries, err := d.catalog().List(); err == nil {
+	if entries, err := catalog.List(); err == nil {
 		for _, e := range entries {
 			statuses[e.Name] = string(e.Status)
 		}
@@ -259,15 +280,40 @@ func profileShow(name string, stdout, stderr io.Writer, d deps) int {
 		}
 	}
 
-	fmt.Fprintln(stdout, "Recommended experiences:")
-	for _, e := range m.Recommended {
-		fmt.Fprintf(stdout, "  - %-20s %s\n", e, statusText(statuses, e))
+	fmt.Fprintln(stdout, "Recommended capabilities:")
+	for _, c := range m.Recommended {
+		fmt.Fprintf(stdout, "  - %-24s %s\n", c, capabilitySummary(res, statuses, c))
 	}
-	fmt.Fprintln(stdout, "Optional experiences:")
-	for _, e := range m.Optional {
-		fmt.Fprintf(stdout, "  - %-20s %s\n", e, statusText(statuses, e))
+	fmt.Fprintln(stdout, "Optional capabilities:")
+	for _, c := range m.Optional {
+		fmt.Fprintf(stdout, "  - %-24s %s\n", c, capabilitySummary(res, statuses, c))
+	}
+	base, berr := res.Base()
+	if berr == nil {
+		fmt.Fprintf(stdout, "Always included: %s (%s)\n", base.Name, capabilitySummary(res, statuses, base.Name))
 	}
 	return 0
+}
+
+// capabilitySummary renders a capability's implementing experiences
+// with install status, e.g. "containers -> containers-tools [available]".
+func capabilitySummary(res *capability.Resolver, statuses map[string]string, name string) string {
+	exps, err := res.ExperiencesFor([]string{name})
+	if err != nil {
+		return "unknown capability"
+	}
+	if len(exps) == 0 {
+		return "no installable experience (planned)"
+	}
+	var parts []string
+	for _, e := range exps {
+		s := statuses[e]
+		if s == "" {
+			s = "unknown"
+		}
+		parts = append(parts, fmt.Sprintf("%s [%s]", e, s))
+	}
+	return "-> " + strings.Join(parts, ", ")
 }
 
 func statusText(statuses map[string]string, name string) string {
@@ -285,40 +331,46 @@ func profileApply(name string, stdout, stderr io.Writer, d deps) int {
 	}
 	fmt.Fprintf(stdout, "Profile %q applied\n", st.ActiveProfile)
 
+	// The recommendation summary is best-effort: on a minimal install
+	// without a catalog it is skipped, never fatal.
 	m, err := profile.NewRegistry().Load(name)
 	if err != nil {
 		return 0
 	}
+	catalog := d.catalog()
+	res, rerr := capability.NewResolver(d.capabilities(), catalog)
+	if rerr != nil {
+		return 0
+	}
 	statuses := map[string]string{}
-	if entries, err := d.catalog().List(); err == nil {
+	if entries, err := catalog.List(); err == nil {
 		for _, e := range entries {
 			statuses[e.Name] = string(e.Status)
 		}
-	} else {
-		fmt.Fprintf(stderr, "veil: warning: statuses unavailable: %v\n", err)
 	}
-	fmt.Fprintln(stdout, "This profile recommends the following experiences:")
-	for _, e := range m.Recommended {
-		fmt.Fprintf(stdout, "  - %-20s %s\n", e, statusText(statuses, e))
+	fmt.Fprintln(stdout, "This profile recommends the following capabilities:")
+	for _, c := range m.Recommended {
+		fmt.Fprintf(stdout, "  - %-24s %s\n", c, capabilitySummary(res, statuses, c))
 	}
 	if len(m.Optional) > 0 {
 		fmt.Fprintln(stdout, "Optional:")
-		for _, e := range m.Optional {
-			fmt.Fprintf(stdout, "  - %-20s %s\n", e, statusText(statuses, e))
+		for _, c := range m.Optional {
+			fmt.Fprintf(stdout, "  - %-24s %s\n", c, capabilitySummary(res, statuses, c))
 		}
 	}
-	fmt.Fprintln(stdout, "Nothing was installed. Run 'veil profile sync' to install the recommended experiences.")
+	fmt.Fprintln(stdout, "Nothing was installed. Run 'veil profile sync' to install the recommended capabilities' experiences.")
 	return 0
 }
 
 func profileDiff(name string, stdout, stderr io.Writer, d deps) int {
 	reg := profile.NewRegistry()
-	p, err := profile.Diff(reg, d.catalog(), name)
+	p, err := profile.Diff(reg, d.capabilities(), d.catalog(), name)
 	if err != nil {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
 		return 1
 	}
 	fmt.Fprintf(stdout, "Profile %s — intent vs machine state\n", p.Profile)
+	fmt.Fprintf(stdout, "Recommended capabilities: %s\n", strings.Join(p.RecommendedCaps, ", "))
 
 	section := func(title string, items []string) {
 		if len(items) == 0 {
@@ -329,6 +381,7 @@ func profileDiff(name string, stdout, stderr io.Writer, d deps) int {
 			fmt.Fprintf(stdout, "  - %s\n", i)
 		}
 	}
+	section("Unknown capabilities (cannot be derived):", p.UnknownCapabilities)
 	section("Missing recommended experiences:", p.MissingRecommended)
 	section("Not yet installable (planned):", p.NotInstallable)
 	section("Unknown to the catalog:", p.UnknownRecommended)
@@ -375,7 +428,7 @@ func profileSync(args []string, stdout, stderr io.Writer, d deps) int {
 		return 1
 	}
 	reg := profile.NewRegistry()
-	p, err := profile.Diff(reg, d.catalog(), st.ActiveProfile)
+	p, err := profile.Diff(reg, d.capabilities(), d.catalog(), st.ActiveProfile)
 	if err != nil {
 		fmt.Fprintf(stderr, "veil: %v\n", err)
 		return 1
@@ -522,7 +575,8 @@ func experienceInfo(name string, stdout, stderr io.Writer, catalog *experience.C
 		}
 	}
 
-	// Reverse lookup: profiles that recommend this experience.
+	// Reverse lookup: profiles that recommend a capability this
+	// experience implements.
 	reg := profile.NewRegistry()
 	pnames, err := reg.List()
 	if err == nil {
@@ -533,10 +587,18 @@ func experienceInfo(name string, stdout, stderr io.Writer, catalog *experience.C
 				continue
 			}
 			for _, ref := range pm.AllReferences() {
-				if ref == m.Name {
-					recommending = append(recommending, pn)
-					break
+				for _, c := range m.Capabilities {
+					if ref == c {
+						recommending = append(recommending, pn)
+						break
+					}
 				}
+			}
+		}
+		if len(m.Capabilities) > 0 {
+			fmt.Fprintln(stdout, "Implements capabilities:")
+			for _, c := range m.Capabilities {
+				fmt.Fprintf(stdout, "  - %s\n", c)
 			}
 		}
 		if len(recommending) > 0 {
@@ -566,7 +628,7 @@ func cmdStatus(stdout, stderr io.Writer, d deps) int {
 	} else {
 		fmt.Fprintf(stdout, "Profile:        %s\n", st.ActiveProfile)
 		reg := profile.NewRegistry()
-		p, derr := profile.Diff(reg, d.catalog(), st.ActiveProfile)
+		p, derr := profile.Diff(reg, d.capabilities(), d.catalog(), st.ActiveProfile)
 		switch {
 		case derr != nil:
 			fmt.Fprintf(stdout, "Profile sync:   (unavailable: %v)\n", derr)
@@ -706,6 +768,28 @@ func cmdDoctor(stdout, stderr io.Writer, d deps) int {
 			fmt.Sprintf("%d inconsistencies", inconsistent))
 	}
 
+	// Capability catalog consistency.
+	capReg := d.capabilities()
+	cnames, cerr := capReg.List()
+	if cerr != nil {
+		check("Capability catalog loads", true, false, cerr.Error())
+	} else {
+		check("Capability catalog loads", true, true, fmt.Sprintf("%d known capabilities", len(cnames)))
+	}
+	capRes, rerr := capability.NewResolver(capReg, catalog)
+	if rerr != nil {
+		check("Capability mapping resolves", true, false, rerr.Error())
+	} else {
+		planned, unknownRefs := capRes.CheckMapping()
+		if len(unknownRefs) > 0 {
+			check("Capability mapping consistent", true, false,
+				fmt.Sprintf("unknown experience→capability reference(s): %s", strings.Join(unknownRefs, ", ")))
+		} else {
+			check("Capability mapping consistent", true, true,
+				fmt.Sprintf("%d planned capability(ies)", len(planned)))
+		}
+	}
+
 	// Profile consistency.
 	reg := profile.NewRegistry()
 	st, err := settings.LoadState()
@@ -734,10 +818,10 @@ func cmdDoctor(stdout, stderr io.Writer, d deps) int {
 		check("Profile manifests valid", false, true, fmt.Sprintf("%d profiles", len(pnames)))
 	}
 	if err == nil && st.ActiveProfile != "" {
-		missing, rerr := profile.CheckReferences(reg, catalog, st.ActiveProfile)
-		check("Profile references known experiences", true,
+		missing, rerr := profile.CheckCapabilities(reg, capReg, catalog, st.ActiveProfile)
+		check("Profile capabilities resolve to experiences", true,
 			rerr == nil && len(missing) == 0,
-			fmt.Sprintf("%d unknown reference(s)", len(missing)))
+			fmt.Sprintf("%d unknown capability reference(s)", len(missing)))
 	}
 
 	// Repository reachability.

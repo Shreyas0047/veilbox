@@ -1,0 +1,8 @@
+name: kubernetes
+description: >-
+  Kubernetes operations: kubectl for cluster administration, Helm for
+  releases and k9s for fast interactive cluster navigation.
+domain: Kubernetes
+tier: core
+provides:
+  - kubernetes

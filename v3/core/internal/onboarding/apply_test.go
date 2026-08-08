@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/desktop"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
@@ -22,10 +23,11 @@ func setupOnboarding(t *testing.T) (PlanInputs, *onboardingtest.Runner) {
 	f := onboardingtest.New()
 	dnf := dnfops.NewWithRunner(f)
 	in := PlanInputs{
-		Registry:  profile.NewRegistryDir(env.ProfDir),
-		Catalog:   experience.NewCatalogWith(env.CatDir, dnf),
-		Workspace: &workspace.Engine{LookPath: func(string) (string, error) { return "/usr/bin/vim", nil }},
-		Desktop:   desktop.NewWith(experience.NewCatalogWith(env.CatDir, dnf), desktop.NewSystemWith(f)),
+		Registry:     profile.NewRegistryDir(env.ProfDir),
+		Catalog:      experience.NewCatalogWith(env.CatDir, dnf),
+		Capabilities: capability.NewRegistryDir(env.CapDir),
+		Workspace:    &workspace.Engine{LookPath: func(string) (string, error) { return "/usr/bin/vim", nil }},
+		Desktop:      desktop.NewWith(experience.NewCatalogWith(env.CatDir, dnf), desktop.NewSystemWith(f)),
 	}
 	return in, f
 }
@@ -133,6 +135,38 @@ func TestApplyStopsAtFailedStage(t *testing.T) {
 	}
 	if saved.LastApply == nil || saved.LastApply.Success {
 		t.Fatalf("failure ledger not persisted: %+v", saved.LastApply)
+	}
+}
+
+func TestApplyDerivesExperiencesFromCapabilities(t *testing.T) {
+	in, f := setupOnboarding(t)
+
+	// A capability-only selection (no stored experiences) must derive
+	// its experiences through the capability mapping.
+	sel := Selection{
+		Profile:      "cloud-engineer",
+		Capabilities: []string{"networking", capability.BaseName},
+	}
+	res, err := Apply(sel, in)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("apply not successful: %+v", res.Stages)
+	}
+	joined := strings.Join(f.Joined(), "\n")
+	if !strings.Contains(joined, "sudo dnf install -y veilbox-experience-networking-tools") {
+		t.Fatalf("expected derived experience install:\n%s", joined)
+	}
+	if strings.Contains(joined, "veilbox-experience-base-operations") {
+		t.Fatalf("empty capability must not resolve an install:\n%s", joined)
+	}
+	saved, err := Load()
+	if err != nil {
+		t.Fatalf("load saved selection: %v", err)
+	}
+	if !contains(saved.Experiences, "networking-tools") {
+		t.Fatalf("derived experiences not persisted: %+v", saved.Experiences)
 	}
 }
 

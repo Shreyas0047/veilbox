@@ -16,14 +16,15 @@ Veilbox v3 is a **ground-up, Fedora-based rebuild** of Veilbox Linux.
 - **Base system:** Fedora (replacing the Debian base of v2)
 - **Approach:** rebuilt from scratch — the existing v2 implementation is not carried forward
 - **Current state:** prototype; `veil` (Core) ships as an RPM with profile intent
-  manifests, experience catalogs, a Workspace Engine, and a Desktop Engine;
-  profiles recommend, `veil profile sync` installs experiences as DNF
-  meta-packages, `veil workspace apply` translates profile preferences into
-  Veilbox-owned user configuration (see `docs/day4-workspace.md`), and
-  `veil desktop install` activates the Niri + Noctalia desktop —
-  install is inert, activation is explicit (see `docs/day5-desktop.md`);
-  `veil onboard` is the first-run wizard: a Bubble Tea TUI on TTYs, a
-  line UI on pipes, with a zero-change-until-review guarantee
+  manifests, capability manifests, experience catalogs, a Workspace Engine, and a
+  Desktop Engine; profiles recommend **capabilities**, the Experience Engine
+  derives the experiences that implement them, and `veil profile sync` installs
+  them as DNF meta-packages (see `docs/capability-layer.md`); `veil workspace
+  apply` translates profile preferences into Veilbox-owned user configuration
+  (see `docs/day4-workspace.md`), and `veil desktop install` activates the Niri +
+  Noctalia desktop — install is inert, activation is explicit (see
+  `docs/day5-desktop.md`); `veil onboard` is the first-run wizard: a Bubble Tea
+  TUI on TTYs, a line UI on pipes, with a zero-change-until-review guarantee
   (see `docs/day6-onboarding.md`)
 
 ## v2 preservation
@@ -39,11 +40,13 @@ through tags, releases, and Git history.
 v3/
 ├── README.md      ← you are here
 ├── docs/
-│   └── adr/       ← architecture decision records
+│   ├── adr/       ← architecture decision records
+│   └── day*.md, capability-layer.md ← feature documentation
 ├── core/          ← Veilbox Core (Go)
 │   ├── cmd/veil/  ← the veil CLI
-│   └── internal/  ← profile, experience, settings, workspace, dnfops engines
+│   └── internal/  ← profile, capability, experience, settings, workspace, dnfops engines
 ├── profiles/      ← profile definitions (intent — configuration, never RPMs)
+├── capabilities/  ← capability definitions (intent concepts, ADR-0011)
 ├── experiences/   ← experience definitions (capability — shipped as RPMs)
 ├── desktop/       ← desktop experience templates (niri config, shell, wallpaper)
 ├── packages/      ← RPM specs, sources, built artifacts
@@ -64,6 +67,10 @@ v3/
   `docs/day5-desktop.md` for the desktop prototype, and
   `docs/day6-onboarding.md` for the onboarding wizard: what is
   implemented, spec gotchas, and the test procedures.
+- See `docs/capability-layer.md` for the capability axis (ADR-0011):
+  profiles recommend capabilities, the Experience Engine derives
+  experiences, and `scripts/smoke-capabilities.sh` drives the accepted
+  SRE demo end to end.
 - The disposable development VM has passwordless sudo enabled **for
   automation only** (see ADR-0002). It is deliberately not part of any
   Veilbox artifact, kickstart, or default configuration.
@@ -81,6 +88,7 @@ veil workspace apply --yes # translates profile preferences into user config
 veil status                # core, profile+sync state, experiences, repos
 scripts/smoke-day5.sh      # 26 checks, run on clean pre-desktop state
 scripts/smoke-day6.sh      # 17 checks: onboard TUI/line UI live smoke
+scripts/smoke-capabilities.sh # 16 checks: the capability-layer demo
 ```
 
 > Desktop testing in the disposable VirtualBox VM requires the VM to
@@ -95,6 +103,8 @@ veil profile show <name>             role, description, recommended/optional wit
 veil profile apply <name>            intent only: validate + persist + summary
 veil profile diff [<name>]           missing / planned / unknown / optional / extras
 veil profile sync [--yes]            install missing recommended; never removes
+veil capability list                 capability catalog (intent concepts)
+veil capability info <name>          a capability and its experiences
 veil experience list                 catalog with statuses
 veil experience info <name>          packages + recommending profiles
 veil experience install <name>       DNF install meta-package by name

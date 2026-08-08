@@ -4,7 +4,8 @@
 //
 //	/usr/share/veilbox/            system-owned data shipped by RPMs (read-only)
 //	/usr/share/veilbox/profiles/   profile manifests (intent definitions)
-//	/usr/share/veilbox/experiences/ experience catalog (capability definitions)
+//	/usr/share/veilbox/capabilities/ capability definitions (intent concepts)
+//	/usr/share/veilbox/experiences/ experience catalog (capability implementations)
 //	~/.config/veilbox/             user-owned Veilbox state (written by veil)
 //	~/.config/veilbox/state.json   machine-written state (active profile, ...)
 //
@@ -24,9 +25,10 @@ const (
 	// EnvRoot overrides SystemRoot, for tests and development.
 	EnvRoot = "VEILBOX_ROOT"
 
-	ProfilesDir    = "profiles"
-	ExperiencesDir = "experiences"
-	DesktopDir     = "desktop"
+	ProfilesDir     = "profiles"
+	ExperiencesDir  = "experiences"
+	CapabilitiesDir = "capabilities"
+	DesktopDir      = "desktop"
 
 	StateDirName = "veilbox"
 	StateFile    = "state.json"
@@ -62,6 +64,12 @@ func SystemProfilesDir() string {
 // SystemExperiencesDir returns the system experience catalog directory.
 func SystemExperiencesDir() string {
 	return filepath.Join(Root(), ExperiencesDir)
+}
+
+// SystemCapabilitiesDir returns the system capability manifests
+// directory (capability definitions, ADR-0011).
+func SystemCapabilitiesDir() string {
+	return filepath.Join(Root(), CapabilitiesDir)
 }
 
 // SystemDesktopDir returns the system desktop templates directory.

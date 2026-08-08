@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/dnfops"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 )
@@ -35,15 +36,16 @@ func (f *fakeRunner) RunInteractive(name string, args ...string) error {
 
 const planDevopsYAML = `name: devops
 description: Builds and operates delivery pipelines.
-recommended_experiences:
-  - base-ops
-  - networking-tools
-  - terminal-ops
-optional_experiences:
-  - observability-cli
+recommended_capabilities:
+  - base-operations
+  - networking
+  - terminal-operations
+optional_capabilities:
+  - observability
 `
 
-// planFixture builds a registry + catalog for plan tests.
+// planFixture builds a capability registry + profile registry + catalog
+// for plan tests.
 //
 // Catalog experiences:
 //
@@ -53,25 +55,33 @@ optional_experiences:
 // The returned runner simulates the RPM database: tests set
 // responses["rpm -qa --queryformat %{NAME}\n"] to the installed
 // veilbox-experience-* package list before calling Diff.
-func planFixture(t *testing.T) (*Registry, *experience.Catalog, *fakeRunner) {
+func planFixture(t *testing.T) (*Registry, *capability.Registry, *experience.Catalog, *fakeRunner) {
 	t.Helper()
 	root := t.TempDir()
 	profilesDir := filepath.Join(root, "profiles")
 	os.MkdirAll(profilesDir, 0o755)
 	os.WriteFile(filepath.Join(profilesDir, "devops.yaml"), []byte(planDevopsYAML), 0o644)
-	os.WriteFile(filepath.Join(profilesDir, "minimal.yaml"), []byte("name: minimal\ndescription: x\nrecommended_experiences: [base-ops]\n"), 0o644)
-	os.WriteFile(filepath.Join(profilesDir, "broken.yaml"), []byte("name: broken\ndescription: x\nrecommended_experiences: [nope-missing]\n"), 0o644)
+	os.WriteFile(filepath.Join(profilesDir, "minimal.yaml"), []byte("name: minimal\ndescription: x\nrecommended_capabilities: [base-operations]\n"), 0o644)
+	os.WriteFile(filepath.Join(profilesDir, "broken.yaml"), []byte("name: broken\ndescription: x\nrecommended_capabilities: [ghost-capability]\n"), 0o644)
+
+	capDir := filepath.Join(root, "capabilities")
+	os.MkdirAll(capDir, 0o755)
+	for _, name := range []string{"base-operations", "networking", "terminal-operations", "observability", "future-capability"} {
+		os.WriteFile(filepath.Join(capDir, name+".yaml"),
+			[]byte("name: "+name+"\ndomain: test\ntier: core\ndescription: x.\n"), 0o644)
+	}
 
 	catDir := filepath.Join(root, "experiences")
 	os.MkdirAll(catDir, 0o755)
-	for name, rpm := range map[string]string{
-		"base-ops":          "veilbox-experience-base-ops",
-		"networking-tools":  "veilbox-experience-networking-tools",
-		"terminal-ops":      "veilbox-experience-terminal-ops",
-		"observability-cli": "veilbox-experience-observability-cli",
-		"future-tools":      "",
+	for name, def := range map[string][2]string{
+		"base-ops":          {"base-operations", "veilbox-experience-base-ops"},
+		"networking-tools":  {"networking", "veilbox-experience-networking-tools"},
+		"terminal-ops":      {"terminal-operations", "veilbox-experience-terminal-ops"},
+		"observability-cli": {"observability", "veilbox-experience-observability-cli"},
+		"future-tools":      {"future-capability", ""},
 	} {
-		content := "name: " + name + "\ndescription: x\n"
+		cap, rpm := def[0], def[1]
+		content := "name: " + name + "\ndescription: x\ncapabilities:\n  - " + cap + "\n"
 		if rpm != "" {
 			content += "rpm: " + rpm + "\n"
 		}
@@ -81,7 +91,7 @@ func planFixture(t *testing.T) (*Registry, *experience.Catalog, *fakeRunner) {
 	f := &fakeRunner{responses: map[string]string{}, errByCmd: map[string]error{}}
 	f.responses["rpm -qa --queryformat %{NAME}\n"] = ""
 	dnf := dnfops.NewWithRunner(f)
-	return NewRegistryDir(profilesDir), experience.NewCatalogWith(catDir, dnf), f
+	return NewRegistryDir(profilesDir), capability.NewRegistryDir(capDir), experience.NewCatalogWith(catDir, dnf), f
 }
 
 // setInstalled simulates the RPM database containing the given
@@ -91,15 +101,18 @@ func setInstalled(f *fakeRunner, pkgs ...string) {
 }
 
 func TestDiffNoneInstalled(t *testing.T) {
-	reg, cat, f := planFixture(t)
+	reg, capReg, cat, f := planFixture(t)
 	setInstalled(f)
 
-	p, err := Diff(reg, cat, "devops")
+	p, err := Diff(reg, capReg, cat, "devops")
 	if err != nil {
 		t.Fatalf("diff: %v", err)
 	}
 	if p.Profile != "devops" {
 		t.Fatalf("profile: %q", p.Profile)
+	}
+	if len(p.RecommendedCaps) != 3 || p.RecommendedCaps[0] != "base-operations" {
+		t.Fatalf("recommended caps: %v", p.RecommendedCaps)
 	}
 	if len(p.MissingRecommended) != 3 || p.MissingRecommended[0] != "base-ops" {
 		t.Fatalf("missing: %v", p.MissingRecommended)
@@ -119,10 +132,10 @@ func TestDiffNoneInstalled(t *testing.T) {
 }
 
 func TestDiffSomeInstalled(t *testing.T) {
-	reg, cat, f := planFixture(t)
+	reg, capReg, cat, f := planFixture(t)
 	setInstalled(f, "veilbox-experience-base-ops")
 
-	p, err := Diff(reg, cat, "devops")
+	p, err := Diff(reg, capReg, cat, "devops")
 	if err != nil {
 		t.Fatalf("diff: %v", err)
 	}
@@ -134,22 +147,23 @@ func TestDiffSomeInstalled(t *testing.T) {
 	}
 }
 
-func TestDiffNotInstallableAndUnknown(t *testing.T) {
-	reg, cat, f := planFixture(t)
+func TestDiffNotInstallableAndUnknownCapability(t *testing.T) {
+	reg, capReg, cat, f := planFixture(t)
 	setInstalled(f)
-	// A profile recommending the planned future-tools and a
-	// nonexistent experience.
-	os.WriteFile(filepath.Join(reg.Dir(), "edge.yaml"), []byte("name: edge\ndescription: x\nrecommended_experiences: [future-tools, ghost]\n"), 0o644)
+	// A profile recommending the planned future-capability (its
+	// experience has no package yet) and a nonexistent capability.
+	os.WriteFile(filepath.Join(reg.Dir(), "edge.yaml"),
+		[]byte("name: edge\ndescription: x\nrecommended_capabilities: [future-capability, ghost-capability]\n"), 0o644)
 
-	p, err := Diff(reg, cat, "edge")
+	p, err := Diff(reg, capReg, cat, "edge")
 	if err != nil {
 		t.Fatalf("diff: %v", err)
 	}
 	if len(p.NotInstallable) != 1 || p.NotInstallable[0] != "future-tools" {
 		t.Fatalf("not installable: %v", p.NotInstallable)
 	}
-	if len(p.UnknownRecommended) != 1 || p.UnknownRecommended[0] != "ghost" {
-		t.Fatalf("unknown: %v", p.UnknownRecommended)
+	if len(p.UnknownCapabilities) != 1 || p.UnknownCapabilities[0] != "ghost-capability" {
+		t.Fatalf("unknown capabilities: %v", p.UnknownCapabilities)
 	}
 	if p.Synced() {
 		t.Fatal("edge profile must not be synced")
@@ -160,17 +174,18 @@ func TestDiffNotInstallableAndUnknown(t *testing.T) {
 }
 
 func TestDiffExtrasPreserved(t *testing.T) {
-	reg, cat, f := planFixture(t)
-	// minimal references only base-ops; observability-cli is installed
-	// but unreferenced. A package without a catalog entry is invisible
-	// to the plan (the catalog is the universe of experiences).
+	reg, capReg, cat, f := planFixture(t)
+	// minimal references only base-operations; observability-cli is
+	// installed but unreferenced. A package without a catalog entry is
+	// invisible to the plan (the catalog is the universe of
+	// experiences).
 	setInstalled(f,
 		"veilbox-experience-base-ops",
 		"veilbox-experience-observability-cli",
 		"veilbox-experience-no-catalog-entry",
 	)
 
-	p, err := Diff(reg, cat, "minimal")
+	p, err := Diff(reg, capReg, cat, "minimal")
 	if err != nil {
 		t.Fatalf("diff: %v", err)
 	}
@@ -187,14 +202,14 @@ func TestDiffExtrasPreserved(t *testing.T) {
 }
 
 func TestDiffDeterministic(t *testing.T) {
-	reg, cat, f := planFixture(t)
+	reg, capReg, cat, f := planFixture(t)
 	setInstalled(f, "veilbox-experience-base-ops", "veilbox-experience-observability-cli")
 
-	a, err := Diff(reg, cat, "devops")
+	a, err := Diff(reg, capReg, cat, "devops")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := Diff(reg, cat, "devops")
+	b, err := Diff(reg, capReg, cat, "devops")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,11 +218,11 @@ func TestDiffDeterministic(t *testing.T) {
 	}
 }
 
-func TestCheckReferences(t *testing.T) {
-	reg, cat, f := planFixture(t)
+func TestCheckCapabilities(t *testing.T) {
+	reg, capReg, cat, f := planFixture(t)
 	setInstalled(f)
 
-	missing, err := CheckReferences(reg, cat, "devops")
+	missing, err := CheckCapabilities(reg, capReg, cat, "devops")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,11 +230,11 @@ func TestCheckReferences(t *testing.T) {
 		t.Fatalf("devops should have no unknown refs: %v", missing)
 	}
 
-	missing, err = CheckReferences(reg, cat, "broken")
+	missing, err = CheckCapabilities(reg, capReg, cat, "broken")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(missing) != 1 || missing[0] != "nope-missing" {
+	if len(missing) != 1 || missing[0] != "ghost-capability" {
 		t.Fatalf("broken refs: %v", missing)
 	}
 }
@@ -228,9 +243,11 @@ func TestCheckReferences(t *testing.T) {
 func (p Plan) String() string {
 	return strings.Join([]string{
 		p.Profile,
+		"reccaps:" + strings.Join(p.RecommendedCaps, ","),
 		"missing:" + strings.Join(p.MissingRecommended, ","),
 		"notinstallable:" + strings.Join(p.NotInstallable, ","),
-		"unknown:" + strings.Join(p.UnknownRecommended, ","),
+		"unknowncaps:" + strings.Join(p.UnknownCapabilities, ","),
+		"unknownrec:" + strings.Join(p.UnknownRecommended, ","),
 		"satisfied:" + strings.Join(p.Satisfied, ","),
 		"optinst:" + strings.Join(p.OptionalInstalled, ","),
 		"optmiss:" + strings.Join(p.OptionalMissing, ","),

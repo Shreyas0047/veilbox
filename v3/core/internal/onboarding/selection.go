@@ -14,10 +14,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
+	"github.com/Shreyas0047/veilbox/v3/core/internal/capability"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/experience"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/profile"
 	"github.com/Shreyas0047/veilbox/v3/core/internal/settings"
@@ -25,7 +25,14 @@ import (
 )
 
 // SchemaVersion of the onboarding selection file.
-const SchemaVersion = 1
+//
+// Version 2 introduced the capability axis (ADR-0011): the selection
+// stores the chosen capabilities; the experience list is derived state
+// (wizard steps, apply and verify re-derive it). Version 1 files are
+// read transparently and upgraded in place on the next save; a
+// pre-capability selection without capabilities is backfilled from its
+// experience list.
+const SchemaVersion = 2
 
 // SelectionFile is the onboarding draft file name.
 const SelectionFile = "onboarding.json"
@@ -74,13 +81,18 @@ type ApplyLog struct {
 
 // Selection is the onboarding draft: what the engineer chose.
 type Selection struct {
-	SchemaVersion int            `json:"schema_version"`
-	UpdatedAt     string         `json:"updated_at,omitempty"`
-	Profile       string         `json:"profile,omitempty"`
-	Desktop       string         `json:"desktop,omitempty"`
-	Experiences   []string       `json:"experiences,omitempty"`
-	Workspace     WorkspacePrefs `json:"workspace"`
-	LastApply     *ApplyLog      `json:"last_apply,omitempty"`
+	SchemaVersion int    `json:"schema_version"`
+	UpdatedAt     string `json:"updated_at,omitempty"`
+	Profile       string `json:"profile,omitempty"`
+	Desktop       string `json:"desktop,omitempty"`
+	// Capabilities are the selected capability concepts (ADR-0011).
+	// The experience list is derived from them; an empty list marks a
+	// pre-capability (v1) selection, which apply still honors via its
+	// stored Experiences.
+	Capabilities []string       `json:"capabilities,omitempty"`
+	Experiences  []string       `json:"experiences,omitempty"`
+	Workspace    WorkspacePrefs `json:"workspace"`
+	LastApply    *ApplyLog      `json:"last_apply,omitempty"`
 }
 
 // SelectionPath returns the onboarding selection file path.
@@ -159,47 +171,65 @@ func MergeWorkspace(base workspace.Preferences, sel WorkspacePrefs) workspace.Pr
 	return out
 }
 
-// ProfileRecommendations returns the recommended ∪ optional
-// experiences of a profile manifest, filtered to installable tooling
-// experiences. This is the initial capability selection; the engineer
-// may toggle anything afterwards.
-func ProfileRecommendations(reg *profile.Registry, cat *experience.Catalog, profileName string) ([]string, error) {
+// SeedCapabilities returns the canonical fresh-wizard seeding for a
+// profile: its recommended capabilities plus the always included base
+// (capability.Seed). Optional capabilities are offered, not
+// pre-selected. This is the initial capability selection; the engineer
+// may toggle anything except the base.
+func SeedCapabilities(reg *profile.Registry, capReg *capability.Registry, cat *experience.Catalog, profileName string) ([]string, error) {
 	m, err := reg.Load(profileName)
 	if err != nil {
 		return nil, err
 	}
-	entries, err := cat.List()
+	res, err := capability.NewResolver(capReg, cat)
 	if err != nil {
 		return nil, err
 	}
-	installable := make(map[string]bool)
-	for _, e := range entries {
-		if e.Type != experience.TypeDesktop && e.RPM != "" {
-			installable[e.Name] = true
-		}
+	return res.Seed(m.Recommended, m.Optional)
+}
+
+// Derive normalizes the selection to the capability model: a
+// pre-capability selection (no capabilities, experiences stored) is
+// backfilled with the capabilities its experiences implement, and the
+// experience list is re-derived from the capabilities. After Derive,
+// Experiences is always the derived state and the two never disagree.
+// An empty capability set is left untouched (pure v1 selections still
+// apply by their stored experiences).
+func (s *Selection) Derive(res *capability.Resolver) error {
+	if len(s.Capabilities) == 0 && len(s.Experiences) > 0 {
+		s.Capabilities = res.CapabilitiesOf(s.Experiences)
 	}
-	seen := make(map[string]bool)
-	var out []string
-	for _, name := range append(append([]string{}, m.Recommended...), m.Optional...) {
-		if installable[name] && !seen[name] {
-			seen[name] = true
-			out = append(out, name)
-		}
+	if len(s.Capabilities) == 0 {
+		return nil
 	}
-	sort.Strings(out)
-	return out, nil
+	exps, err := res.ExperiencesFor(s.Capabilities)
+	if err != nil {
+		return err
+	}
+	s.Experiences = exps
+	return nil
 }
 
 // Problems validates the selection against the registries: unknown
-// profiles, unknown or non-installable experiences, desktop references
-// in the capability step, and invalid workspace subset values. The
-// plan refuses to apply while problems exist.
-func (s Selection) Problems(reg *profile.Registry, cat *experience.Catalog) []string {
+// profiles, unknown capabilities, unknown or non-installable
+// experiences, desktop references in the capability step, and invalid
+// workspace subset values. The plan refuses to apply while problems
+// exist.
+func (s Selection) Problems(reg *profile.Registry, capReg *capability.Registry, cat *experience.Catalog) []string {
 	var out []string
 	if s.Profile == "" {
 		out = append(out, "no profile selected")
 	} else if _, err := reg.Load(s.Profile); err != nil {
 		out = append(out, fmt.Sprintf("profile %q is not known", s.Profile))
+	}
+
+	if len(s.Capabilities) > 0 {
+		res, err := capability.NewResolver(capReg, cat)
+		if err != nil {
+			out = append(out, fmt.Sprintf("capability mapping unavailable: %v", err))
+		} else if unknown, verr := res.Validate(s.Capabilities); verr != nil {
+			out = append(out, fmt.Sprintf("unknown capability reference(s): %s", strings.Join(unknown, ", ")))
+		}
 	}
 
 	if s.Desktop != "" {
